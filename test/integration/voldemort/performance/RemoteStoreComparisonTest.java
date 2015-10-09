@@ -106,6 +106,7 @@ public class RemoteStoreComparisonTest {
         RequestHandlerFactory factory = ServerTestUtils.getSocketRequestHandlerFactory(repository);
         AbstractSocketService socketService = ServerTestUtils.getSocketService(useNio,
                                                                                factory,
+                                                                               null,
                                                                                6666,
                                                                                50,
                                                                                50,

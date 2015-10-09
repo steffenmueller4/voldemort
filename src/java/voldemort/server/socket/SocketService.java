@@ -16,6 +16,8 @@
 
 package voldemort.server.socket;
 
+import javax.net.ssl.SSLContext;
+
 import voldemort.common.service.ServiceType;
 import voldemort.server.AbstractSocketService;
 import voldemort.server.StatusManager;
@@ -31,6 +33,7 @@ public class SocketService extends AbstractSocketService {
     private final SocketServer server;
 
     public SocketService(RequestHandlerFactory requestHandlerFactory,
+                         SSLContext sslContext,
                          int port,
                          int coreConnections,
                          int maxConnections,
@@ -38,7 +41,8 @@ public class SocketService extends AbstractSocketService {
                          String serviceName,
                          boolean enableJmx) {
         super(ServiceType.SOCKET, port, serviceName, enableJmx);
-        this.server = new SocketServer(port,
+        this.server = new SocketServer(sslContext,
+                                       port,
                                        coreConnections,
                                        maxConnections,
                                        socketBufferSize,

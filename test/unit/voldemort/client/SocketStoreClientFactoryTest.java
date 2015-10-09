@@ -69,6 +69,7 @@ public class SocketStoreClientFactoryTest extends AbstractStoreClientFactoryTest
                                                          getClusterXml(),
                                                          getStoreDefXml(),
                                                          getValidStoreName(),
+                                                         null,
                                                          getLocalNode().getSocketPort());
         socketService.start();
     }

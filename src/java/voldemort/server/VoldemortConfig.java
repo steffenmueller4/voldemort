@@ -25,6 +25,8 @@ import java.util.Timer;
 import java.util.TimerTask;
 import java.util.concurrent.TimeUnit;
 
+import com.google.common.collect.ImmutableList;
+
 import voldemort.client.ClientConfig;
 import voldemort.client.DefaultStoreClient;
 import voldemort.client.TimeoutConfig;
@@ -63,8 +65,6 @@ import voldemort.utils.Props;
 import voldemort.utils.Time;
 import voldemort.utils.UndefinedPropertyException;
 import voldemort.utils.Utils;
-
-import com.google.common.collect.ImmutableList;
 
 /**
  * Configuration parameters for the voldemort server.
@@ -190,6 +190,14 @@ public class VoldemortConfig implements Serializable {
     private int socketTimeoutMs;
     private int socketBufferSize;
     private boolean socketKeepAlive;
+
+    private boolean sslEnabled;
+    private String sslProtocol;
+    private String[] sslCipherSuites;
+    private String sslTrustStore;
+    private String sslTrustStorePassword;
+    private String sslKeyStore;
+    private String sslKeyStorePassword;
 
     private boolean useNioConnector;
     private boolean nioConnectorKeepAlive;
@@ -458,6 +466,18 @@ public class VoldemortConfig implements Serializable {
         this.nioConnectorSelectors = props.getInt("nio.connector.selectors",
                                                   Math.max(8, Runtime.getRuntime()
                                                                      .availableProcessors()));
+
+        this.sslEnabled = props.getBoolean("ssl.enable", false);
+        this.sslProtocol = props.getString("ssl.protocol", "TLSv1.2");
+        String cipherSuites = props.getString("ssl.ciphersuites", null);
+        if(cipherSuites != null && !cipherSuites.isEmpty()) {
+            this.sslCipherSuites = cipherSuites.split(",");
+        }
+        this.sslKeyStore = props.getString("ssl.keystore", null);
+        this.sslKeyStorePassword = props.getString("ssl.keystore.password", null);
+        this.sslTrustStore = props.getString("ssl.truststore", null);
+        this.sslTrustStorePassword = props.getString("ssl.truststore.password", null);
+
         this.nioAdminConnectorSelectors = props.getInt("nio.admin.connector.selectors",
                                                        Math.max(8, Runtime.getRuntime()
                                                                           .availableProcessors()));
@@ -675,6 +695,16 @@ public class VoldemortConfig implements Serializable {
                 throw new ConfigurationException(PUSH_HA_LOCK_IMPLEMENTATION + " must be set if " + PUSH_HA_ENABLED + "=true");
             if (this.highAvailabilityPushMaxNodeFailures < 1)
                 throw new ConfigurationException(PUSH_HA_MAX_NODE_FAILURES + " must be 1 or more if " + PUSH_HA_ENABLED + "=true");
+        }
+        if(this.sslEnabled) {
+            if(this.sslKeyStore == null || this.sslKeyStore.isEmpty())
+                throw new ConfigurationException("ssl.keystore must be set");
+            if(this.sslKeyStorePassword == null || this.sslKeyStore.isEmpty())
+                throw new ConfigurationException("ssl.keystore.password must be set");
+            if(this.sslTrustStore == null || this.sslTrustStore.isEmpty())
+                throw new ConfigurationException("ssl.truststore must be set");
+            if(this.sslTrustStorePassword == null || this.sslTrustStorePassword.isEmpty())
+                throw new ConfigurationException("ssl.truststore.password must be set");
         }
     }
 
@@ -1587,6 +1617,126 @@ public class VoldemortConfig implements Serializable {
 
     public int getNioConnectorSelectors() {
         return nioConnectorSelectors;
+    }
+
+    /**
+     * Determines whether the server will use SSL.
+     * 
+     * <ul>
+     * <li>Property : "ssl.enable"</li>
+     * <li>Default : false</li>
+     * </ul>
+     * 
+     */
+    public boolean getSSLEnabled() {
+        return sslEnabled;
+    }
+
+    public void setSSLEnabled(boolean sslEnabled) {
+        this.sslEnabled = sslEnabled;
+    }
+
+    /**
+     * Gets the server's SSL protocol, e.g., TLS, TLSv1.1, or TLSv1.2.
+     * 
+     * <ul>
+     * <li>Property : "ssl.protocol"</li>
+     * <li>Default : TLSv1.2</li>
+     * </ul>
+     * 
+     */
+    public String getSSLProtocol() {
+        return sslProtocol;
+    }
+
+    public void setSSLProtocol(String sslProtocol) {
+        this.sslProtocol = sslProtocol;
+    }
+
+    /**
+     * Gets the server's SSL cipher suites as an array from a comma-separated
+     * list, e.g., TLS_RSA_WITH_AES_256_CBC_SHA.
+     * 
+     * <ul>
+     * <li>Property : "ssl.ciphersuites"</li>
+     * <li>Default : null</li>
+     * </ul>
+     * 
+     */
+    public String[] getSSLCipherSuites() {
+        return this.sslCipherSuites;
+    }
+
+    public void setSSLCipherSuites(String[] sslCipherSuites) {
+        this.sslCipherSuites = sslCipherSuites;
+    }
+
+    /**
+     * Gets the path to the server's SSL trust store.
+     * 
+     * <ul>
+     * <li>Property : "ssl.truststore"</li>
+     * <li>Default : null</li>
+     * </ul>
+     * 
+     */
+    public String getSSLTrustStore() {
+        return sslTrustStore;
+    }
+
+    public void setSSLTrustStore(String sslTrustStore) {
+        this.sslTrustStore = sslTrustStore;
+    }
+
+    /**
+     * Gets the server's SSL trust store password.
+     * 
+     * <ul>
+     * <li>Property : "ssl.truststore.password"</li>
+     * <li>Default : null</li>
+     * </ul>
+     * 
+     */
+    public String getSSLTrustStorePassword() {
+        return sslTrustStorePassword;
+    }
+
+    public void setSSLTrustStorePassword(String sslTrustStorePassword) {
+        this.sslTrustStorePassword = sslTrustStorePassword;
+    }
+
+    /**
+     * Gets the path to the server's SSL key store.
+     * 
+     * <ul>
+     * <li>Property : "ssl.keystore"</li>
+     * <li>Default : null</li>
+     * </ul>
+     * 
+     */
+    public String getSSLKeyStore() {
+        return sslKeyStore;
+    }
+
+    public void setSSLKeyStore(String sslKeyStore) {
+        this.sslKeyStore = sslKeyStore;
+    }
+
+    /**
+     * Gets the server's SSL key store password.
+     * 
+     * <ul>
+     * <li>Property : "ssl.keystore.password"</li>
+     * <li>Default : null</li>
+     * </ul>
+     * 
+     */
+    public String getSSLKeyStorePassword() {
+        return sslKeyStorePassword;
+    }
+
+    public void setSSLKeyStorePassword(String sslKeyStorePassword) {
+        this.sslKeyStorePassword = sslKeyStorePassword;
     }
 
     /**

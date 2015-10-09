@@ -4,13 +4,12 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.concurrent.TimeUnit;
 
-import junit.framework.TestCase;
-
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
 import org.junit.runners.Parameterized.Parameters;
 
+import junit.framework.TestCase;
 import voldemort.ServerTestUtils;
 import voldemort.client.protocol.RequestFormatType;
 import voldemort.client.protocol.admin.SocketAndStreams;
@@ -92,6 +91,7 @@ public class SimpleSocketPoolTest extends TestCase {
         // start a dummy server
         AbstractSocketService server = ServerTestUtils.getSocketService(useNio,
                                                                         new ClientRequestHandlerFactory(null),
+                                                                        null,
                                                                         7666,
                                                                         50,
                                                                         50,
@@ -133,6 +133,7 @@ public class SimpleSocketPoolTest extends TestCase {
         // start a dummy server
         AbstractSocketService server = ServerTestUtils.getSocketService(useNio,
                                                                         new ClientRequestHandlerFactory(null),
+                                                                        null,
                                                                         7666,
                                                                         50,
                                                                         50,

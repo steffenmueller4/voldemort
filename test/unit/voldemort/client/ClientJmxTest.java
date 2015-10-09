@@ -72,6 +72,7 @@ public class ClientJmxTest extends AbstractStoreClientFactoryTest {
                                                          getClusterXml(),
                                                          getStoreDefXml(),
                                                          getValidStoreName(),
+                                                         null,
                                                          getLocalNode().getSocketPort());
         socketService.start();
         mbServer = ManagementFactory.getPlatformMBeanServer();

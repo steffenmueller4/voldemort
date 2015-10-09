@@ -73,7 +73,14 @@ public class NioSelectorManagerTest {
 
         final Store<ByteArray, byte[], byte[]> socketStore = pool.create(STORE_NAME, "localhost", port, RequestFormatType.VOLDEMORT_V1, RequestRoutingType.NORMAL);
         factory = ServerTestUtils.getSocketRequestHandlerFactory(repository);
-        socketService = ServerTestUtils.getSocketService(true, factory, port, numSelectors, 10, 1000, MAX_HEART_BEAT_MS);
+        socketService = ServerTestUtils.getSocketService(true,
+                                                         factory,
+                                                         null,
+                                                         port,
+                                                         numSelectors,
+                                                         10,
+                                                         1000,
+                                                         MAX_HEART_BEAT_MS);
         socketService.start();
     }
 

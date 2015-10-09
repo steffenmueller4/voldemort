@@ -34,6 +34,9 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLServerSocketFactory;
+
 import org.apache.log4j.Logger;
 
 import voldemort.VoldemortException;
@@ -67,15 +70,18 @@ public class SocketServer extends Thread {
     private final AtomicLong sessionIdSequence;
     private final ConcurrentMap<Long, SocketServerSession> activeSessions;
     private final String serverName;
+    private final SSLContext sslContext;
 
     private ServerSocket serverSocket = null;
 
-    public SocketServer(int port,
+    public SocketServer(SSLContext sslContext,
+                        int port,
                         int defaultThreads,
                         int maxThreads,
                         int socketBufferSize,
                         RequestHandlerFactory handlerFactory,
                         String serverName) {
+        this.sslContext = sslContext;
         this.port = port;
         this.socketBufferSize = socketBufferSize;
         this.threadGroup = new ThreadGroup("voldemort-socket-server");
@@ -133,7 +139,12 @@ public class SocketServer extends Thread {
     public void run() {
         logger.info("Starting voldemort socket server (" + serverName + ") on port " + port);
         try {
-            serverSocket = new ServerSocket();
+            if(sslContext != null) {
+                SSLServerSocketFactory f = sslContext.getServerSocketFactory();
+                serverSocket = f.createServerSocket();
+            } else{
+                serverSocket = new ServerSocket();
+            }
             serverSocket.bind(new InetSocketAddress(port));
             serverSocket.setReceiveBufferSize(this.socketBufferSize);
             startedStatusQueue.put(SUCCESS);

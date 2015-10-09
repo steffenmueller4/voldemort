@@ -19,13 +19,32 @@ package voldemort.server;
 import static voldemort.utils.Utils.croak;
 
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.security.KeyManagementException;
+import java.security.KeyStore;
+import java.security.KeyStoreException;
+import java.security.NoSuchAlgorithmException;
+import java.security.UnrecoverableKeyException;
+import java.security.cert.CertificateException;
+import java.security.cert.X509Certificate;
 import java.util.ArrayList;
+import java.util.Date;
+import java.util.Enumeration;
 import java.util.HashSet;
 import java.util.List;
 
+import javax.net.ssl.KeyManagerFactory;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.TrustManagerFactory;
+
 import org.apache.log4j.Logger;
+
+import com.google.common.collect.ImmutableList;
+import com.google.common.collect.Lists;
 
 import voldemort.VoldemortException;
 import voldemort.annotations.jmx.JmxOperation;
@@ -60,9 +79,6 @@ import voldemort.versioning.VectorClock;
 import voldemort.versioning.Versioned;
 import voldemort.xml.ClusterMapper;
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Lists;
-
 /**
  * This is the main server, it bootstraps all the services.
  * 
@@ -86,6 +102,8 @@ public class VoldemortServer extends AbstractService {
     private AsyncOperationService asyncService;
     private StorageService storageService;
     private JmxService jmxService;
+    private SSLContext sslContext;
+    private boolean checkedExpiry;
 
     public VoldemortServer(VoldemortConfig config) {
         super(ServiceType.VOLDEMORT);
@@ -118,7 +136,7 @@ public class VoldemortServer extends AbstractService {
         // update cluster details in metaDataStore
         ConfigurationStorageEngine metadataInnerEngine = new ConfigurationStorageEngine("metadata-config-store",
                                                                                         voldemortConfig.getMetadataDirectory());
-        
+
         List<Versioned<String>> clusterXmlValue = metadataInnerEngine.get(MetadataStore.CLUSTER_KEY,
                                                                           null);
 
@@ -163,7 +181,8 @@ public class VoldemortServer extends AbstractService {
     // our environments and our SRE makes sure there is an exact match?" --
     // VChandar
     //
-    // "Strict host name doesn't work? We can always trim the rest before the comparison."
+    // "Strict host name doesn't work? We can always trim the rest before the
+    // comparison."
     // -- LGao
     private void checkHostName() {
         try {
@@ -215,6 +234,53 @@ public class VoldemortServer extends AbstractService {
 
     public void createOnlineServices() {
         onlineServices = Lists.newArrayList();
+        if(voldemortConfig.getSSLEnabled()) {
+            logger.info("Using SSL/TLS.");
+            try {
+                sslContext = SSLContext.getInstance(voldemortConfig.getSSLProtocol());
+
+                // Get the ssl trust store
+                FileInputStream trustStoreFile = new FileInputStream(voldemortConfig.getSSLTrustStore());
+                TrustManagerFactory trustManagerFactory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+                KeyStore trustStore = KeyStore.getInstance(KeyStore.getDefaultType());
+                trustStore.load(trustStoreFile,
+                                voldemortConfig.getSSLTrustStorePassword().toCharArray());
+                trustManagerFactory.init(trustStore);
+                TrustManager[] trustManagers = trustManagerFactory.getTrustManagers();
+
+                // Get the ssl key store
+                FileInputStream ksf = new FileInputStream(voldemortConfig.getSSLKeyStore());
+                KeyManagerFactory kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
+                KeyStore ks = KeyStore.getInstance(KeyStore.getDefaultType());
+                ks.load(ksf, voldemortConfig.getSSLKeyStorePassword().toCharArray());
+                if(!checkedExpiry) {
+                    for(Enumeration<String> aliases = ks.aliases(); aliases.hasMoreElements();) {
+                        String alias = aliases.nextElement();
+                        if(ks.getCertificate(alias).getType().equals("X.509")) {
+                            Date expires = ((X509Certificate) ks.getCertificate(alias)).getNotAfter();
+                            if(expires.before(new Date()))
+                                logger.warn("Certificate for " + alias + " expired on " + expires);
+                        }
+                    }
+                    checkedExpiry = true;
+                }
+                kmf.init(ks, voldemortConfig.getSSLKeyStorePassword().toCharArray());
+
+                sslContext.init(kmf.getKeyManagers(), trustManagers, null);
+            } catch(NoSuchAlgorithmException e) {
+                logger.error("Cannot initialize SSLContext", e);
+            } catch(KeyStoreException e) {
+                logger.error("Cannot initialize SSLContext", e);
+            } catch(CertificateException e) {
+                logger.error("Cannot initialize SSLContext", e);
+            } catch(IOException e) {
+                logger.error("Cannot initialize SSLContext", e);
+            } catch(UnrecoverableKeyException e) {
+                logger.error("Cannot initialize SSLContext", e);
+            } catch(KeyManagementException e) {
+                logger.error("Cannot initialize SSLContext", e);
+            }
+        }
         if(voldemortConfig.isHttpServerEnabled()) {
             /*
              * TODO: Get rid of HTTP Service.
@@ -255,6 +321,7 @@ public class VoldemortServer extends AbstractService {
             } else {
                 logger.info("Using BIO Connector.");
                 SocketService socketService = new SocketService(clientRequestHandlerFactory,
+                                                                sslContext,
                                                                 identityNode.getSocketPort(),
                                                                 voldemortConfig.getCoreThreads(),
                                                                 voldemortConfig.getMaxThreads(),
@@ -316,6 +383,7 @@ public class VoldemortServer extends AbstractService {
             } else {
                 logger.info("Using BIO Connector for Admin Service.");
                 services.add(new SocketService(adminRequestHandlerFactory,
+                                               sslContext,
                                                identityNode.getAdminPort(),
                                                voldemortConfig.getAdminCoreThreads(),
                                                voldemortConfig.getAdminMaxThreads(),
@@ -330,10 +398,13 @@ public class VoldemortServer extends AbstractService {
         }
 
         if(voldemortConfig.isJmxEnabled()) {
-            jmxService = new JmxService(this, this.metadata.getCluster(), storeRepository, services);
+            jmxService = new JmxService(this,
+                                        this.metadata.getCluster(),
+                                        storeRepository,
+                                        services);
             services.add(jmxService);
         }
-        
+
         return ImmutableList.copyOf(services);
     }
 
@@ -372,12 +443,13 @@ public class VoldemortServer extends AbstractService {
         for(VoldemortService service: basicServices) {
             try {
                 service.start();
-            } catch (DisabledStoreException e) {
-                logger.error("Got a DisabledStoreException from " + service.getType().getDisplayName(), e);
+            } catch(DisabledStoreException e) {
+                logger.error("Got a DisabledStoreException from "
+                             + service.getType().getDisplayName(), e);
                 goOnline = false;
             }
         }
-        if (goOnline) {
+        if(goOnline) {
             startOnlineServices();
         } else {
             goOffline();
@@ -441,7 +513,7 @@ public class VoldemortServer extends AbstractService {
 
             @Override
             public void run() {
-                if (server.isStarted())
+                if(server.isStarted())
                     server.stop();
             }
         });

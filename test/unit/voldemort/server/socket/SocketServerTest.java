@@ -49,6 +49,7 @@ public class SocketServerTest {
                                                 VoldemortTestConstants.getOneNodeClusterXml(),
                                                 VoldemortTestConstants.getSimpleStoreDefinitionsXml(),
                                                 "test",
+                                                null,
                                                 port);
     }
 

@@ -21,8 +21,6 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 
-import junit.framework.TestCase;
-
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -30,6 +28,7 @@ import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
 import org.junit.runners.Parameterized.Parameters;
 
+import junit.framework.TestCase;
 import voldemort.ServerTestUtils;
 import voldemort.client.protocol.RequestFormatType;
 import voldemort.client.protocol.admin.SocketAndStreams;
@@ -73,6 +72,7 @@ public class SocketPoolTest extends TestCase {
         RequestHandlerFactory handlerFactory = ServerTestUtils.getSocketRequestHandlerFactory(new StoreRepository());
         this.server = ServerTestUtils.getSocketService(useNio,
                                                        handlerFactory,
+                                                       null,
                                                        port,
                                                        10,
                                                        10 + 3,

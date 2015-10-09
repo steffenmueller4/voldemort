@@ -34,12 +34,18 @@ import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
+import javax.net.ssl.SSLContext;
+
 import org.apache.commons.io.FileUtils;
 import org.apache.http.client.HttpClient;
 import org.apache.log4j.Logger;
 import org.mortbay.jetty.Server;
 import org.mortbay.jetty.servlet.Context;
 import org.mortbay.jetty.servlet.ServletHolder;
+
+import com.google.common.collect.ImmutableList;
+import com.google.common.collect.Lists;
+import com.google.common.collect.Sets;
 
 import voldemort.client.ClientConfig;
 import voldemort.client.RoutingTier;
@@ -86,10 +92,6 @@ import voldemort.versioning.Versioned;
 import voldemort.xml.ClusterMapper;
 import voldemort.xml.StoreDefinitionsMapper;
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Lists;
-import com.google.common.collect.Sets;
-
 /**
  * Helper functions for testing with real server implementations
  *
@@ -123,13 +125,14 @@ public class ServerTestUtils {
                                                          String clusterXml,
                                                          String storesXml,
                                                          String storeName,
+                                                         SSLContext sslContext,
                                                          int port) {
         RequestHandlerFactory factory = getSocketRequestHandlerFactory(clusterXml,
                                                                        storesXml,
                                                                        getStores(storeName,
                                                                                  clusterXml,
                                                                                  storesXml));
-        return getSocketService(useNio, factory, port, 5, 10, 10000);
+        return getSocketService(useNio, factory, sslContext, port, 5, 10, 10000);
     }
 
     public static RequestHandlerFactory getSocketRequestHandlerFactory(String clusterXml,
@@ -149,6 +152,7 @@ public class ServerTestUtils {
 
     public static AbstractSocketService getSocketService(boolean useNio,
                                                          RequestHandlerFactory requestHandlerFactory,
+                                                         SSLContext sslContext,
                                                          int port,
                                                          int coreConnections,
                                                          int maxConnections,
@@ -168,6 +172,7 @@ public class ServerTestUtils {
                                                  maxHeartBeatTimeMs);
         } else {
             socketService = new SocketService(requestHandlerFactory,
+                                              sslContext,
                                               port,
                                               coreConnections,
                                               maxConnections,
@@ -181,12 +186,14 @@ public class ServerTestUtils {
 
     public static AbstractSocketService getSocketService(boolean useNio,
                                                          RequestHandlerFactory requestHandlerFactory,
+                                                         SSLContext sslContext,
                                                          int port,
                                                          int coreConnections,
                                                          int maxConnections,
                                                          int bufferSize) {
         return getSocketService(useNio,
                                 requestHandlerFactory,
+                                sslContext,
                                 port,
                                 coreConnections,
                                 maxConnections,

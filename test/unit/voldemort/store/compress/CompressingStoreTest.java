@@ -65,6 +65,7 @@ public class CompressingStoreTest extends AbstractByteArrayStoreTest {
                                                                                clusterXml,
                                                                                VoldemortTestConstants.getCompressedStoreDefinitionsXml(),
                                                                                "test",
+                                                                               null,
                                                                                freePort);
         socketService.start();
 

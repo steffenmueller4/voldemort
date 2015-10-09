@@ -25,8 +25,6 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Properties;
 
-import junit.framework.TestCase;
-
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -34,6 +32,9 @@ import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
 import org.junit.runners.Parameterized.Parameters;
 
+import com.google.common.collect.AbstractIterator;
+
+import junit.framework.TestCase;
 import voldemort.ServerTestUtils;
 import voldemort.TestUtils;
 import voldemort.VoldemortException;
@@ -51,8 +52,6 @@ import voldemort.store.memory.InMemoryStorageEngine;
 import voldemort.utils.ByteArray;
 import voldemort.utils.Pair;
 import voldemort.versioning.Versioned;
-
-import com.google.common.collect.AbstractIterator;
 
 /**
  * Test to check streaming behavior under failure.
@@ -131,6 +130,7 @@ public class AdminServiceFailureTest extends TestCase {
                                                                                             null);
         return ServerTestUtils.getSocketService(useNio,
                                                 requestHandlerFactory,
+                                                null,
                                                 node.getAdminPort(),
                                                 2,
                                                 2,

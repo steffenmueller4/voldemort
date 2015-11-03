@@ -117,17 +117,17 @@ public abstract class SelectorManagerWorker implements Runnable {
         } catch(CancelledKeyException e) {
             close();
         } catch(EOFException e) {
+            // EOFException is expected, hence no logging, otherwise this block
+            // could be combined with IOException
             reportException(e);
             close();
         } catch(IOException e) {
-            reportException(e);
             logger.info("Connection reset from " + socketChannel.socket() + " with message - "
                         + e.getMessage());
+            reportException(e);
             close();
         } catch(Throwable t) {
-            if(logger.isEnabledFor(Level.ERROR))
-                logger.error(t.getMessage(), t);
-
+            logger.error("Caught throwable from " + socketChannel.socket(), t);
             close();
         }
     }

@@ -122,6 +122,7 @@ public class ClientRequestExecutorPoolTest {
         RequestHandlerFactory handlerFactory = ServerTestUtils.getSocketRequestHandlerFactory(new StoreRepository());
         this.server = ServerTestUtils.getSocketService(useNio,
                                                        handlerFactory,
+                                                       null,
                                                        port,
                                                        10,
                                                        10 + 3,

@@ -26,3 +26,4 @@ lib
 .project
 .classpath
 *.class
+/.settings

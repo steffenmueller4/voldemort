@@ -51,6 +51,7 @@ public final class VAdminProto {
     GET_HA_SETTINGS(38, 41),
     DISABLE_STORE_VERSION(39, 42),
     HANDLE_FETCH_FAILURE(40, 43),
+    GET_CONFIG(41, 44),
     ;
     
     
@@ -99,6 +100,7 @@ public final class VAdminProto {
         case 41: return GET_HA_SETTINGS;
         case 42: return DISABLE_STORE_VERSION;
         case 43: return HANDLE_FETCH_FAILURE;
+        case 44: return GET_CONFIG;
         default: return null;
       }
     }
@@ -129,7 +131,7 @@ public final class VAdminProto {
     }
     
     private static final AdminRequestType[] VALUES = {
-      GET_METADATA, UPDATE_METADATA, UPDATE_PARTITION_ENTRIES, FETCH_PARTITION_ENTRIES, DELETE_PARTITION_ENTRIES, INITIATE_FETCH_AND_UPDATE, ASYNC_OPERATION_STATUS, INITIATE_REBALANCE_NODE, ASYNC_OPERATION_STOP, ASYNC_OPERATION_LIST, TRUNCATE_ENTRIES, ADD_STORE, DELETE_STORE, FETCH_STORE, SWAP_STORE, ROLLBACK_STORE, GET_RO_MAX_VERSION_DIR, GET_RO_CURRENT_VERSION_DIR, FETCH_PARTITION_FILES, UPDATE_SLOP_ENTRIES, FAILED_FETCH_STORE, GET_RO_STORAGE_FORMAT, REBALANCE_STATE_CHANGE, REPAIR_JOB, DELETE_STORE_REBALANCE_STATE, NATIVE_BACKUP, RESERVE_MEMORY, PRUNE_JOB, SLOP_PURGE_JOB, UPDATE_METADATA_PAIR, UPDATE_STORE_DEFINITIONS, SET_OFFLINE_STATE, GET_RO_STORAGE_FILE_LIST, GET_RO_COMPRESSION_CODEC_LIST, LIST_SCHEDULED_JOBS, GET_SCHEDULED_JOB_STATUS, STOP_SCHEDULED_JOB, ENABLE_SCHEDULED_JOB, GET_HA_SETTINGS, DISABLE_STORE_VERSION, HANDLE_FETCH_FAILURE, 
+      GET_METADATA, UPDATE_METADATA, UPDATE_PARTITION_ENTRIES, FETCH_PARTITION_ENTRIES, DELETE_PARTITION_ENTRIES, INITIATE_FETCH_AND_UPDATE, ASYNC_OPERATION_STATUS, INITIATE_REBALANCE_NODE, ASYNC_OPERATION_STOP, ASYNC_OPERATION_LIST, TRUNCATE_ENTRIES, ADD_STORE, DELETE_STORE, FETCH_STORE, SWAP_STORE, ROLLBACK_STORE, GET_RO_MAX_VERSION_DIR, GET_RO_CURRENT_VERSION_DIR, FETCH_PARTITION_FILES, UPDATE_SLOP_ENTRIES, FAILED_FETCH_STORE, GET_RO_STORAGE_FORMAT, REBALANCE_STATE_CHANGE, REPAIR_JOB, DELETE_STORE_REBALANCE_STATE, NATIVE_BACKUP, RESERVE_MEMORY, PRUNE_JOB, SLOP_PURGE_JOB, UPDATE_METADATA_PAIR, UPDATE_STORE_DEFINITIONS, SET_OFFLINE_STATE, GET_RO_STORAGE_FILE_LIST, GET_RO_COMPRESSION_CODEC_LIST, LIST_SCHEDULED_JOBS, GET_SCHEDULED_JOB_STATUS, STOP_SCHEDULED_JOB, ENABLE_SCHEDULED_JOB, GET_HA_SETTINGS, DISABLE_STORE_VERSION, HANDLE_FETCH_FAILURE, GET_CONFIG, 
     };
     public static AdminRequestType valueOf(
         com.google.protobuf.Descriptors.EnumValueDescriptor desc) {
@@ -23646,6 +23648,30 @@ public final class VAdminProto {
     public boolean hasError() { return hasError; }
     public voldemort.client.protocol.pb.VProto.Error getError() { return error_; }
     
+    // repeated int32 data_file_size = 3;
+    public static final int DATA_FILE_SIZE_FIELD_NUMBER = 3;
+    private java.util.List<java.lang.Integer> dataFileSize_ =
+      java.util.Collections.emptyList();
+    public java.util.List<java.lang.Integer> getDataFileSizeList() {
+      return dataFileSize_;
+    }
+    public int getDataFileSizeCount() { return dataFileSize_.size(); }
+    public int getDataFileSize(int index) {
+      return dataFileSize_.get(index);
+    }
+    
+    // repeated int32 index_file_size = 4;
+    public static final int INDEX_FILE_SIZE_FIELD_NUMBER = 4;
+    private java.util.List<java.lang.Integer> indexFileSize_ =
+      java.util.Collections.emptyList();
+    public java.util.List<java.lang.Integer> getIndexFileSizeList() {
+      return indexFileSize_;
+    }
+    public int getIndexFileSizeCount() { return indexFileSize_.size(); }
+    public int getIndexFileSize(int index) {
+      return indexFileSize_.get(index);
+    }
+    
     private void initFields() {
       error_ = voldemort.client.protocol.pb.VProto.Error.getDefaultInstance();
     }
@@ -23664,6 +23690,12 @@ public final class VAdminProto {
       }
       if (hasError()) {
         output.writeMessage(2, getError());
+      }
+      for (int element : getDataFileSizeList()) {
+        output.writeInt32(3, element);
+      }
+      for (int element : getIndexFileSizeList()) {
+        output.writeInt32(4, element);
       }
       getUnknownFields().writeTo(output);
     }
@@ -23686,6 +23718,24 @@ public final class VAdminProto {
       if (hasError()) {
         size += com.google.protobuf.CodedOutputStream
           .computeMessageSize(2, getError());
+      }
+      {
+        int dataSize = 0;
+        for (int element : getDataFileSizeList()) {
+          dataSize += com.google.protobuf.CodedOutputStream
+            .computeInt32SizeNoTag(element);
+        }
+        size += dataSize;
+        size += 1 * getDataFileSizeList().size();
+      }
+      {
+        int dataSize = 0;
+        for (int element : getIndexFileSizeList()) {
+          dataSize += com.google.protobuf.CodedOutputStream
+            .computeInt32SizeNoTag(element);
+        }
+        size += dataSize;
+        size += 1 * getIndexFileSizeList().size();
       }
       size += getUnknownFields().getSerializedSize();
       memoizedSerializedSize = size;
@@ -23833,6 +23883,14 @@ public final class VAdminProto {
           result.fileName_ =
             java.util.Collections.unmodifiableList(result.fileName_);
         }
+        if (result.dataFileSize_ != java.util.Collections.EMPTY_LIST) {
+          result.dataFileSize_ =
+            java.util.Collections.unmodifiableList(result.dataFileSize_);
+        }
+        if (result.indexFileSize_ != java.util.Collections.EMPTY_LIST) {
+          result.indexFileSize_ =
+            java.util.Collections.unmodifiableList(result.indexFileSize_);
+        }
         voldemort.client.protocol.pb.VAdminProto.GetROStorageFileListResponse returnMe = result;
         result = null;
         return returnMe;
@@ -23857,6 +23915,18 @@ public final class VAdminProto {
         }
         if (other.hasError()) {
           mergeError(other.getError());
+        }
+        if (!other.dataFileSize_.isEmpty()) {
+          if (result.dataFileSize_.isEmpty()) {
+            result.dataFileSize_ = new java.util.ArrayList<java.lang.Integer>();
+          }
+          result.dataFileSize_.addAll(other.dataFileSize_);
+        }
+        if (!other.indexFileSize_.isEmpty()) {
+          if (result.indexFileSize_.isEmpty()) {
+            result.indexFileSize_ = new java.util.ArrayList<java.lang.Integer>();
+          }
+          result.indexFileSize_.addAll(other.indexFileSize_);
         }
         this.mergeUnknownFields(other.getUnknownFields());
         return this;
@@ -23894,6 +23964,32 @@ public final class VAdminProto {
               }
               input.readMessage(subBuilder, extensionRegistry);
               setError(subBuilder.buildPartial());
+              break;
+            }
+            case 24: {
+              addDataFileSize(input.readInt32());
+              break;
+            }
+            case 26: {
+              int length = input.readRawVarint32();
+              int limit = input.pushLimit(length);
+              while (input.getBytesUntilLimit() > 0) {
+                addDataFileSize(input.readInt32());
+              }
+              input.popLimit(limit);
+              break;
+            }
+            case 32: {
+              addIndexFileSize(input.readInt32());
+              break;
+            }
+            case 34: {
+              int length = input.readRawVarint32();
+              int limit = input.pushLimit(length);
+              while (input.getBytesUntilLimit() > 0) {
+                addIndexFileSize(input.readInt32());
+              }
+              input.popLimit(limit);
               break;
             }
           }
@@ -23975,6 +24071,74 @@ public final class VAdminProto {
       public Builder clearError() {
         result.hasError = false;
         result.error_ = voldemort.client.protocol.pb.VProto.Error.getDefaultInstance();
+        return this;
+      }
+      
+      // repeated int32 data_file_size = 3;
+      public java.util.List<java.lang.Integer> getDataFileSizeList() {
+        return java.util.Collections.unmodifiableList(result.dataFileSize_);
+      }
+      public int getDataFileSizeCount() {
+        return result.getDataFileSizeCount();
+      }
+      public int getDataFileSize(int index) {
+        return result.getDataFileSize(index);
+      }
+      public Builder setDataFileSize(int index, int value) {
+        result.dataFileSize_.set(index, value);
+        return this;
+      }
+      public Builder addDataFileSize(int value) {
+        if (result.dataFileSize_.isEmpty()) {
+          result.dataFileSize_ = new java.util.ArrayList<java.lang.Integer>();
+        }
+        result.dataFileSize_.add(value);
+        return this;
+      }
+      public Builder addAllDataFileSize(
+          java.lang.Iterable<? extends java.lang.Integer> values) {
+        if (result.dataFileSize_.isEmpty()) {
+          result.dataFileSize_ = new java.util.ArrayList<java.lang.Integer>();
+        }
+        super.addAll(values, result.dataFileSize_);
+        return this;
+      }
+      public Builder clearDataFileSize() {
+        result.dataFileSize_ = java.util.Collections.emptyList();
+        return this;
+      }
+      
+      // repeated int32 index_file_size = 4;
+      public java.util.List<java.lang.Integer> getIndexFileSizeList() {
+        return java.util.Collections.unmodifiableList(result.indexFileSize_);
+      }
+      public int getIndexFileSizeCount() {
+        return result.getIndexFileSizeCount();
+      }
+      public int getIndexFileSize(int index) {
+        return result.getIndexFileSize(index);
+      }
+      public Builder setIndexFileSize(int index, int value) {
+        result.indexFileSize_.set(index, value);
+        return this;
+      }
+      public Builder addIndexFileSize(int value) {
+        if (result.indexFileSize_.isEmpty()) {
+          result.indexFileSize_ = new java.util.ArrayList<java.lang.Integer>();
+        }
+        result.indexFileSize_.add(value);
+        return this;
+      }
+      public Builder addAllIndexFileSize(
+          java.lang.Iterable<? extends java.lang.Integer> values) {
+        if (result.indexFileSize_.isEmpty()) {
+          result.indexFileSize_ = new java.util.ArrayList<java.lang.Integer>();
+        }
+        super.addAll(values, result.indexFileSize_);
+        return this;
+      }
+      public Builder clearIndexFileSize() {
+        result.indexFileSize_ = java.util.Collections.emptyList();
         return this;
       }
       
@@ -30785,6 +30949,1083 @@ public final class VAdminProto {
     // @@protoc_insertion_point(class_scope:voldemort.HandleFetchFailureResponse)
   }
   
+  public static final class GetConfigRequest extends
+      com.google.protobuf.GeneratedMessage {
+    // Use GetConfigRequest.newBuilder() to construct.
+    private GetConfigRequest() {
+      initFields();
+    }
+    private GetConfigRequest(boolean noInit) {}
+    
+    private static final GetConfigRequest defaultInstance;
+    public static GetConfigRequest getDefaultInstance() {
+      return defaultInstance;
+    }
+    
+    public GetConfigRequest getDefaultInstanceForType() {
+      return defaultInstance;
+    }
+    
+    public static final com.google.protobuf.Descriptors.Descriptor
+        getDescriptor() {
+      return voldemort.client.protocol.pb.VAdminProto.internal_static_voldemort_GetConfigRequest_descriptor;
+    }
+    
+    protected com.google.protobuf.GeneratedMessage.FieldAccessorTable
+        internalGetFieldAccessorTable() {
+      return voldemort.client.protocol.pb.VAdminProto.internal_static_voldemort_GetConfigRequest_fieldAccessorTable;
+    }
+    
+    // repeated string config_key = 1;
+    public static final int CONFIG_KEY_FIELD_NUMBER = 1;
+    private java.util.List<java.lang.String> configKey_ =
+      java.util.Collections.emptyList();
+    public java.util.List<java.lang.String> getConfigKeyList() {
+      return configKey_;
+    }
+    public int getConfigKeyCount() { return configKey_.size(); }
+    public java.lang.String getConfigKey(int index) {
+      return configKey_.get(index);
+    }
+    
+    private void initFields() {
+    }
+    public final boolean isInitialized() {
+      return true;
+    }
+    
+    public void writeTo(com.google.protobuf.CodedOutputStream output)
+                        throws java.io.IOException {
+      getSerializedSize();
+      for (java.lang.String element : getConfigKeyList()) {
+        output.writeString(1, element);
+      }
+      getUnknownFields().writeTo(output);
+    }
+    
+    private int memoizedSerializedSize = -1;
+    public int getSerializedSize() {
+      int size = memoizedSerializedSize;
+      if (size != -1) return size;
+    
+      size = 0;
+      {
+        int dataSize = 0;
+        for (java.lang.String element : getConfigKeyList()) {
+          dataSize += com.google.protobuf.CodedOutputStream
+            .computeStringSizeNoTag(element);
+        }
+        size += dataSize;
+        size += 1 * getConfigKeyList().size();
+      }
+      size += getUnknownFields().getSerializedSize();
+      memoizedSerializedSize = size;
+      return size;
+    }
+    
+    public static voldemort.client.protocol.pb.VAdminProto.GetConfigRequest parseFrom(
+        com.google.protobuf.ByteString data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return newBuilder().mergeFrom(data).buildParsed();
+    }
+    public static voldemort.client.protocol.pb.VAdminProto.GetConfigRequest parseFrom(
+        com.google.protobuf.ByteString data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return newBuilder().mergeFrom(data, extensionRegistry)
+               .buildParsed();
+    }
+    public static voldemort.client.protocol.pb.VAdminProto.GetConfigRequest parseFrom(byte[] data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return newBuilder().mergeFrom(data).buildParsed();
+    }
+    public static voldemort.client.protocol.pb.VAdminProto.GetConfigRequest parseFrom(
+        byte[] data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return newBuilder().mergeFrom(data, extensionRegistry)
+               .buildParsed();
+    }
+    public static voldemort.client.protocol.pb.VAdminProto.GetConfigRequest parseFrom(java.io.InputStream input)
+        throws java.io.IOException {
+      return newBuilder().mergeFrom(input).buildParsed();
+    }
+    public static voldemort.client.protocol.pb.VAdminProto.GetConfigRequest parseFrom(
+        java.io.InputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return newBuilder().mergeFrom(input, extensionRegistry)
+               .buildParsed();
+    }
+    public static voldemort.client.protocol.pb.VAdminProto.GetConfigRequest parseDelimitedFrom(java.io.InputStream input)
+        throws java.io.IOException {
+      Builder builder = newBuilder();
+      if (builder.mergeDelimitedFrom(input)) {
+        return builder.buildParsed();
+      } else {
+        return null;
+      }
+    }
+    public static voldemort.client.protocol.pb.VAdminProto.GetConfigRequest parseDelimitedFrom(
+        java.io.InputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      Builder builder = newBuilder();
+      if (builder.mergeDelimitedFrom(input, extensionRegistry)) {
+        return builder.buildParsed();
+      } else {
+        return null;
+      }
+    }
+    public static voldemort.client.protocol.pb.VAdminProto.GetConfigRequest parseFrom(
+        com.google.protobuf.CodedInputStream input)
+        throws java.io.IOException {
+      return newBuilder().mergeFrom(input).buildParsed();
+    }
+    public static voldemort.client.protocol.pb.VAdminProto.GetConfigRequest parseFrom(
+        com.google.protobuf.CodedInputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return newBuilder().mergeFrom(input, extensionRegistry)
+               .buildParsed();
+    }
+    
+    public static Builder newBuilder() { return Builder.create(); }
+    public Builder newBuilderForType() { return newBuilder(); }
+    public static Builder newBuilder(voldemort.client.protocol.pb.VAdminProto.GetConfigRequest prototype) {
+      return newBuilder().mergeFrom(prototype);
+    }
+    public Builder toBuilder() { return newBuilder(this); }
+    
+    public static final class Builder extends
+        com.google.protobuf.GeneratedMessage.Builder<Builder> {
+      private voldemort.client.protocol.pb.VAdminProto.GetConfigRequest result;
+      
+      // Construct using voldemort.client.protocol.pb.VAdminProto.GetConfigRequest.newBuilder()
+      private Builder() {}
+      
+      private static Builder create() {
+        Builder builder = new Builder();
+        builder.result = new voldemort.client.protocol.pb.VAdminProto.GetConfigRequest();
+        return builder;
+      }
+      
+      protected voldemort.client.protocol.pb.VAdminProto.GetConfigRequest internalGetResult() {
+        return result;
+      }
+      
+      public Builder clear() {
+        if (result == null) {
+          throw new IllegalStateException(
+            "Cannot call clear() after build().");
+        }
+        result = new voldemort.client.protocol.pb.VAdminProto.GetConfigRequest();
+        return this;
+      }
+      
+      public Builder clone() {
+        return create().mergeFrom(result);
+      }
+      
+      public com.google.protobuf.Descriptors.Descriptor
+          getDescriptorForType() {
+        return voldemort.client.protocol.pb.VAdminProto.GetConfigRequest.getDescriptor();
+      }
+      
+      public voldemort.client.protocol.pb.VAdminProto.GetConfigRequest getDefaultInstanceForType() {
+        return voldemort.client.protocol.pb.VAdminProto.GetConfigRequest.getDefaultInstance();
+      }
+      
+      public boolean isInitialized() {
+        return result.isInitialized();
+      }
+      public voldemort.client.protocol.pb.VAdminProto.GetConfigRequest build() {
+        if (result != null && !isInitialized()) {
+          throw newUninitializedMessageException(result);
+        }
+        return buildPartial();
+      }
+      
+      private voldemort.client.protocol.pb.VAdminProto.GetConfigRequest buildParsed()
+          throws com.google.protobuf.InvalidProtocolBufferException {
+        if (!isInitialized()) {
+          throw newUninitializedMessageException(
+            result).asInvalidProtocolBufferException();
+        }
+        return buildPartial();
+      }
+      
+      public voldemort.client.protocol.pb.VAdminProto.GetConfigRequest buildPartial() {
+        if (result == null) {
+          throw new IllegalStateException(
+            "build() has already been called on this Builder.");
+        }
+        if (result.configKey_ != java.util.Collections.EMPTY_LIST) {
+          result.configKey_ =
+            java.util.Collections.unmodifiableList(result.configKey_);
+        }
+        voldemort.client.protocol.pb.VAdminProto.GetConfigRequest returnMe = result;
+        result = null;
+        return returnMe;
+      }
+      
+      public Builder mergeFrom(com.google.protobuf.Message other) {
+        if (other instanceof voldemort.client.protocol.pb.VAdminProto.GetConfigRequest) {
+          return mergeFrom((voldemort.client.protocol.pb.VAdminProto.GetConfigRequest)other);
+        } else {
+          super.mergeFrom(other);
+          return this;
+        }
+      }
+      
+      public Builder mergeFrom(voldemort.client.protocol.pb.VAdminProto.GetConfigRequest other) {
+        if (other == voldemort.client.protocol.pb.VAdminProto.GetConfigRequest.getDefaultInstance()) return this;
+        if (!other.configKey_.isEmpty()) {
+          if (result.configKey_.isEmpty()) {
+            result.configKey_ = new java.util.ArrayList<java.lang.String>();
+          }
+          result.configKey_.addAll(other.configKey_);
+        }
+        this.mergeUnknownFields(other.getUnknownFields());
+        return this;
+      }
+      
+      public Builder mergeFrom(
+          com.google.protobuf.CodedInputStream input,
+          com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+          throws java.io.IOException {
+        com.google.protobuf.UnknownFieldSet.Builder unknownFields =
+          com.google.protobuf.UnknownFieldSet.newBuilder(
+            this.getUnknownFields());
+        while (true) {
+          int tag = input.readTag();
+          switch (tag) {
+            case 0:
+              this.setUnknownFields(unknownFields.build());
+              return this;
+            default: {
+              if (!parseUnknownField(input, unknownFields,
+                                     extensionRegistry, tag)) {
+                this.setUnknownFields(unknownFields.build());
+                return this;
+              }
+              break;
+            }
+            case 10: {
+              addConfigKey(input.readString());
+              break;
+            }
+          }
+        }
+      }
+      
+      
+      // repeated string config_key = 1;
+      public java.util.List<java.lang.String> getConfigKeyList() {
+        return java.util.Collections.unmodifiableList(result.configKey_);
+      }
+      public int getConfigKeyCount() {
+        return result.getConfigKeyCount();
+      }
+      public java.lang.String getConfigKey(int index) {
+        return result.getConfigKey(index);
+      }
+      public Builder setConfigKey(int index, java.lang.String value) {
+        if (value == null) {
+    throw new NullPointerException();
+  }
+  result.configKey_.set(index, value);
+        return this;
+      }
+      public Builder addConfigKey(java.lang.String value) {
+        if (value == null) {
+    throw new NullPointerException();
+  }
+  if (result.configKey_.isEmpty()) {
+          result.configKey_ = new java.util.ArrayList<java.lang.String>();
+        }
+        result.configKey_.add(value);
+        return this;
+      }
+      public Builder addAllConfigKey(
+          java.lang.Iterable<? extends java.lang.String> values) {
+        if (result.configKey_.isEmpty()) {
+          result.configKey_ = new java.util.ArrayList<java.lang.String>();
+        }
+        super.addAll(values, result.configKey_);
+        return this;
+      }
+      public Builder clearConfigKey() {
+        result.configKey_ = java.util.Collections.emptyList();
+        return this;
+      }
+      
+      // @@protoc_insertion_point(builder_scope:voldemort.GetConfigRequest)
+    }
+    
+    static {
+      defaultInstance = new GetConfigRequest(true);
+      voldemort.client.protocol.pb.VAdminProto.internalForceInit();
+      defaultInstance.initFields();
+    }
+    
+    // @@protoc_insertion_point(class_scope:voldemort.GetConfigRequest)
+  }
+  
+  public static final class GetConfigResponse extends
+      com.google.protobuf.GeneratedMessage {
+    // Use GetConfigResponse.newBuilder() to construct.
+    private GetConfigResponse() {
+      initFields();
+    }
+    private GetConfigResponse(boolean noInit) {}
+    
+    private static final GetConfigResponse defaultInstance;
+    public static GetConfigResponse getDefaultInstance() {
+      return defaultInstance;
+    }
+    
+    public GetConfigResponse getDefaultInstanceForType() {
+      return defaultInstance;
+    }
+    
+    public static final com.google.protobuf.Descriptors.Descriptor
+        getDescriptor() {
+      return voldemort.client.protocol.pb.VAdminProto.internal_static_voldemort_GetConfigResponse_descriptor;
+    }
+    
+    protected com.google.protobuf.GeneratedMessage.FieldAccessorTable
+        internalGetFieldAccessorTable() {
+      return voldemort.client.protocol.pb.VAdminProto.internal_static_voldemort_GetConfigResponse_fieldAccessorTable;
+    }
+    
+    // repeated .voldemort.MapFieldEntry config_map = 1;
+    public static final int CONFIG_MAP_FIELD_NUMBER = 1;
+    private java.util.List<voldemort.client.protocol.pb.VAdminProto.MapFieldEntry> configMap_ =
+      java.util.Collections.emptyList();
+    public java.util.List<voldemort.client.protocol.pb.VAdminProto.MapFieldEntry> getConfigMapList() {
+      return configMap_;
+    }
+    public int getConfigMapCount() { return configMap_.size(); }
+    public voldemort.client.protocol.pb.VAdminProto.MapFieldEntry getConfigMap(int index) {
+      return configMap_.get(index);
+    }
+    
+    // repeated .voldemort.MapFieldEntry invalid_config_map = 2;
+    public static final int INVALID_CONFIG_MAP_FIELD_NUMBER = 2;
+    private java.util.List<voldemort.client.protocol.pb.VAdminProto.MapFieldEntry> invalidConfigMap_ =
+      java.util.Collections.emptyList();
+    public java.util.List<voldemort.client.protocol.pb.VAdminProto.MapFieldEntry> getInvalidConfigMapList() {
+      return invalidConfigMap_;
+    }
+    public int getInvalidConfigMapCount() { return invalidConfigMap_.size(); }
+    public voldemort.client.protocol.pb.VAdminProto.MapFieldEntry getInvalidConfigMap(int index) {
+      return invalidConfigMap_.get(index);
+    }
+    
+    private void initFields() {
+    }
+    public final boolean isInitialized() {
+      for (voldemort.client.protocol.pb.VAdminProto.MapFieldEntry element : getConfigMapList()) {
+        if (!element.isInitialized()) return false;
+      }
+      for (voldemort.client.protocol.pb.VAdminProto.MapFieldEntry element : getInvalidConfigMapList()) {
+        if (!element.isInitialized()) return false;
+      }
+      return true;
+    }
+    
+    public void writeTo(com.google.protobuf.CodedOutputStream output)
+                        throws java.io.IOException {
+      getSerializedSize();
+      for (voldemort.client.protocol.pb.VAdminProto.MapFieldEntry element : getConfigMapList()) {
+        output.writeMessage(1, element);
+      }
+      for (voldemort.client.protocol.pb.VAdminProto.MapFieldEntry element : getInvalidConfigMapList()) {
+        output.writeMessage(2, element);
+      }
+      getUnknownFields().writeTo(output);
+    }
+    
+    private int memoizedSerializedSize = -1;
+    public int getSerializedSize() {
+      int size = memoizedSerializedSize;
+      if (size != -1) return size;
+    
+      size = 0;
+      for (voldemort.client.protocol.pb.VAdminProto.MapFieldEntry element : getConfigMapList()) {
+        size += com.google.protobuf.CodedOutputStream
+          .computeMessageSize(1, element);
+      }
+      for (voldemort.client.protocol.pb.VAdminProto.MapFieldEntry element : getInvalidConfigMapList()) {
+        size += com.google.protobuf.CodedOutputStream
+          .computeMessageSize(2, element);
+      }
+      size += getUnknownFields().getSerializedSize();
+      memoizedSerializedSize = size;
+      return size;
+    }
+    
+    public static voldemort.client.protocol.pb.VAdminProto.GetConfigResponse parseFrom(
+        com.google.protobuf.ByteString data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return newBuilder().mergeFrom(data).buildParsed();
+    }
+    public static voldemort.client.protocol.pb.VAdminProto.GetConfigResponse parseFrom(
+        com.google.protobuf.ByteString data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return newBuilder().mergeFrom(data, extensionRegistry)
+               .buildParsed();
+    }
+    public static voldemort.client.protocol.pb.VAdminProto.GetConfigResponse parseFrom(byte[] data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return newBuilder().mergeFrom(data).buildParsed();
+    }
+    public static voldemort.client.protocol.pb.VAdminProto.GetConfigResponse parseFrom(
+        byte[] data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return newBuilder().mergeFrom(data, extensionRegistry)
+               .buildParsed();
+    }
+    public static voldemort.client.protocol.pb.VAdminProto.GetConfigResponse parseFrom(java.io.InputStream input)
+        throws java.io.IOException {
+      return newBuilder().mergeFrom(input).buildParsed();
+    }
+    public static voldemort.client.protocol.pb.VAdminProto.GetConfigResponse parseFrom(
+        java.io.InputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return newBuilder().mergeFrom(input, extensionRegistry)
+               .buildParsed();
+    }
+    public static voldemort.client.protocol.pb.VAdminProto.GetConfigResponse parseDelimitedFrom(java.io.InputStream input)
+        throws java.io.IOException {
+      Builder builder = newBuilder();
+      if (builder.mergeDelimitedFrom(input)) {
+        return builder.buildParsed();
+      } else {
+        return null;
+      }
+    }
+    public static voldemort.client.protocol.pb.VAdminProto.GetConfigResponse parseDelimitedFrom(
+        java.io.InputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      Builder builder = newBuilder();
+      if (builder.mergeDelimitedFrom(input, extensionRegistry)) {
+        return builder.buildParsed();
+      } else {
+        return null;
+      }
+    }
+    public static voldemort.client.protocol.pb.VAdminProto.GetConfigResponse parseFrom(
+        com.google.protobuf.CodedInputStream input)
+        throws java.io.IOException {
+      return newBuilder().mergeFrom(input).buildParsed();
+    }
+    public static voldemort.client.protocol.pb.VAdminProto.GetConfigResponse parseFrom(
+        com.google.protobuf.CodedInputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return newBuilder().mergeFrom(input, extensionRegistry)
+               .buildParsed();
+    }
+    
+    public static Builder newBuilder() { return Builder.create(); }
+    public Builder newBuilderForType() { return newBuilder(); }
+    public static Builder newBuilder(voldemort.client.protocol.pb.VAdminProto.GetConfigResponse prototype) {
+      return newBuilder().mergeFrom(prototype);
+    }
+    public Builder toBuilder() { return newBuilder(this); }
+    
+    public static final class Builder extends
+        com.google.protobuf.GeneratedMessage.Builder<Builder> {
+      private voldemort.client.protocol.pb.VAdminProto.GetConfigResponse result;
+      
+      // Construct using voldemort.client.protocol.pb.VAdminProto.GetConfigResponse.newBuilder()
+      private Builder() {}
+      
+      private static Builder create() {
+        Builder builder = new Builder();
+        builder.result = new voldemort.client.protocol.pb.VAdminProto.GetConfigResponse();
+        return builder;
+      }
+      
+      protected voldemort.client.protocol.pb.VAdminProto.GetConfigResponse internalGetResult() {
+        return result;
+      }
+      
+      public Builder clear() {
+        if (result == null) {
+          throw new IllegalStateException(
+            "Cannot call clear() after build().");
+        }
+        result = new voldemort.client.protocol.pb.VAdminProto.GetConfigResponse();
+        return this;
+      }
+      
+      public Builder clone() {
+        return create().mergeFrom(result);
+      }
+      
+      public com.google.protobuf.Descriptors.Descriptor
+          getDescriptorForType() {
+        return voldemort.client.protocol.pb.VAdminProto.GetConfigResponse.getDescriptor();
+      }
+      
+      public voldemort.client.protocol.pb.VAdminProto.GetConfigResponse getDefaultInstanceForType() {
+        return voldemort.client.protocol.pb.VAdminProto.GetConfigResponse.getDefaultInstance();
+      }
+      
+      public boolean isInitialized() {
+        return result.isInitialized();
+      }
+      public voldemort.client.protocol.pb.VAdminProto.GetConfigResponse build() {
+        if (result != null && !isInitialized()) {
+          throw newUninitializedMessageException(result);
+        }
+        return buildPartial();
+      }
+      
+      private voldemort.client.protocol.pb.VAdminProto.GetConfigResponse buildParsed()
+          throws com.google.protobuf.InvalidProtocolBufferException {
+        if (!isInitialized()) {
+          throw newUninitializedMessageException(
+            result).asInvalidProtocolBufferException();
+        }
+        return buildPartial();
+      }
+      
+      public voldemort.client.protocol.pb.VAdminProto.GetConfigResponse buildPartial() {
+        if (result == null) {
+          throw new IllegalStateException(
+            "build() has already been called on this Builder.");
+        }
+        if (result.configMap_ != java.util.Collections.EMPTY_LIST) {
+          result.configMap_ =
+            java.util.Collections.unmodifiableList(result.configMap_);
+        }
+        if (result.invalidConfigMap_ != java.util.Collections.EMPTY_LIST) {
+          result.invalidConfigMap_ =
+            java.util.Collections.unmodifiableList(result.invalidConfigMap_);
+        }
+        voldemort.client.protocol.pb.VAdminProto.GetConfigResponse returnMe = result;
+        result = null;
+        return returnMe;
+      }
+      
+      public Builder mergeFrom(com.google.protobuf.Message other) {
+        if (other instanceof voldemort.client.protocol.pb.VAdminProto.GetConfigResponse) {
+          return mergeFrom((voldemort.client.protocol.pb.VAdminProto.GetConfigResponse)other);
+        } else {
+          super.mergeFrom(other);
+          return this;
+        }
+      }
+      
+      public Builder mergeFrom(voldemort.client.protocol.pb.VAdminProto.GetConfigResponse other) {
+        if (other == voldemort.client.protocol.pb.VAdminProto.GetConfigResponse.getDefaultInstance()) return this;
+        if (!other.configMap_.isEmpty()) {
+          if (result.configMap_.isEmpty()) {
+            result.configMap_ = new java.util.ArrayList<voldemort.client.protocol.pb.VAdminProto.MapFieldEntry>();
+          }
+          result.configMap_.addAll(other.configMap_);
+        }
+        if (!other.invalidConfigMap_.isEmpty()) {
+          if (result.invalidConfigMap_.isEmpty()) {
+            result.invalidConfigMap_ = new java.util.ArrayList<voldemort.client.protocol.pb.VAdminProto.MapFieldEntry>();
+          }
+          result.invalidConfigMap_.addAll(other.invalidConfigMap_);
+        }
+        this.mergeUnknownFields(other.getUnknownFields());
+        return this;
+      }
+      
+      public Builder mergeFrom(
+          com.google.protobuf.CodedInputStream input,
+          com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+          throws java.io.IOException {
+        com.google.protobuf.UnknownFieldSet.Builder unknownFields =
+          com.google.protobuf.UnknownFieldSet.newBuilder(
+            this.getUnknownFields());
+        while (true) {
+          int tag = input.readTag();
+          switch (tag) {
+            case 0:
+              this.setUnknownFields(unknownFields.build());
+              return this;
+            default: {
+              if (!parseUnknownField(input, unknownFields,
+                                     extensionRegistry, tag)) {
+                this.setUnknownFields(unknownFields.build());
+                return this;
+              }
+              break;
+            }
+            case 10: {
+              voldemort.client.protocol.pb.VAdminProto.MapFieldEntry.Builder subBuilder = voldemort.client.protocol.pb.VAdminProto.MapFieldEntry.newBuilder();
+              input.readMessage(subBuilder, extensionRegistry);
+              addConfigMap(subBuilder.buildPartial());
+              break;
+            }
+            case 18: {
+              voldemort.client.protocol.pb.VAdminProto.MapFieldEntry.Builder subBuilder = voldemort.client.protocol.pb.VAdminProto.MapFieldEntry.newBuilder();
+              input.readMessage(subBuilder, extensionRegistry);
+              addInvalidConfigMap(subBuilder.buildPartial());
+              break;
+            }
+          }
+        }
+      }
+      
+      
+      // repeated .voldemort.MapFieldEntry config_map = 1;
+      public java.util.List<voldemort.client.protocol.pb.VAdminProto.MapFieldEntry> getConfigMapList() {
+        return java.util.Collections.unmodifiableList(result.configMap_);
+      }
+      public int getConfigMapCount() {
+        return result.getConfigMapCount();
+      }
+      public voldemort.client.protocol.pb.VAdminProto.MapFieldEntry getConfigMap(int index) {
+        return result.getConfigMap(index);
+      }
+      public Builder setConfigMap(int index, voldemort.client.protocol.pb.VAdminProto.MapFieldEntry value) {
+        if (value == null) {
+          throw new NullPointerException();
+        }
+        result.configMap_.set(index, value);
+        return this;
+      }
+      public Builder setConfigMap(int index, voldemort.client.protocol.pb.VAdminProto.MapFieldEntry.Builder builderForValue) {
+        result.configMap_.set(index, builderForValue.build());
+        return this;
+      }
+      public Builder addConfigMap(voldemort.client.protocol.pb.VAdminProto.MapFieldEntry value) {
+        if (value == null) {
+          throw new NullPointerException();
+        }
+        if (result.configMap_.isEmpty()) {
+          result.configMap_ = new java.util.ArrayList<voldemort.client.protocol.pb.VAdminProto.MapFieldEntry>();
+        }
+        result.configMap_.add(value);
+        return this;
+      }
+      public Builder addConfigMap(voldemort.client.protocol.pb.VAdminProto.MapFieldEntry.Builder builderForValue) {
+        if (result.configMap_.isEmpty()) {
+          result.configMap_ = new java.util.ArrayList<voldemort.client.protocol.pb.VAdminProto.MapFieldEntry>();
+        }
+        result.configMap_.add(builderForValue.build());
+        return this;
+      }
+      public Builder addAllConfigMap(
+          java.lang.Iterable<? extends voldemort.client.protocol.pb.VAdminProto.MapFieldEntry> values) {
+        if (result.configMap_.isEmpty()) {
+          result.configMap_ = new java.util.ArrayList<voldemort.client.protocol.pb.VAdminProto.MapFieldEntry>();
+        }
+        super.addAll(values, result.configMap_);
+        return this;
+      }
+      public Builder clearConfigMap() {
+        result.configMap_ = java.util.Collections.emptyList();
+        return this;
+      }
+      
+      // repeated .voldemort.MapFieldEntry invalid_config_map = 2;
+      public java.util.List<voldemort.client.protocol.pb.VAdminProto.MapFieldEntry> getInvalidConfigMapList() {
+        return java.util.Collections.unmodifiableList(result.invalidConfigMap_);
+      }
+      public int getInvalidConfigMapCount() {
+        return result.getInvalidConfigMapCount();
+      }
+      public voldemort.client.protocol.pb.VAdminProto.MapFieldEntry getInvalidConfigMap(int index) {
+        return result.getInvalidConfigMap(index);
+      }
+      public Builder setInvalidConfigMap(int index, voldemort.client.protocol.pb.VAdminProto.MapFieldEntry value) {
+        if (value == null) {
+          throw new NullPointerException();
+        }
+        result.invalidConfigMap_.set(index, value);
+        return this;
+      }
+      public Builder setInvalidConfigMap(int index, voldemort.client.protocol.pb.VAdminProto.MapFieldEntry.Builder builderForValue) {
+        result.invalidConfigMap_.set(index, builderForValue.build());
+        return this;
+      }
+      public Builder addInvalidConfigMap(voldemort.client.protocol.pb.VAdminProto.MapFieldEntry value) {
+        if (value == null) {
+          throw new NullPointerException();
+        }
+        if (result.invalidConfigMap_.isEmpty()) {
+          result.invalidConfigMap_ = new java.util.ArrayList<voldemort.client.protocol.pb.VAdminProto.MapFieldEntry>();
+        }
+        result.invalidConfigMap_.add(value);
+        return this;
+      }
+      public Builder addInvalidConfigMap(voldemort.client.protocol.pb.VAdminProto.MapFieldEntry.Builder builderForValue) {
+        if (result.invalidConfigMap_.isEmpty()) {
+          result.invalidConfigMap_ = new java.util.ArrayList<voldemort.client.protocol.pb.VAdminProto.MapFieldEntry>();
+        }
+        result.invalidConfigMap_.add(builderForValue.build());
+        return this;
+      }
+      public Builder addAllInvalidConfigMap(
+          java.lang.Iterable<? extends voldemort.client.protocol.pb.VAdminProto.MapFieldEntry> values) {
+        if (result.invalidConfigMap_.isEmpty()) {
+          result.invalidConfigMap_ = new java.util.ArrayList<voldemort.client.protocol.pb.VAdminProto.MapFieldEntry>();
+        }
+        super.addAll(values, result.invalidConfigMap_);
+        return this;
+      }
+      public Builder clearInvalidConfigMap() {
+        result.invalidConfigMap_ = java.util.Collections.emptyList();
+        return this;
+      }
+      
+      // @@protoc_insertion_point(builder_scope:voldemort.GetConfigResponse)
+    }
+    
+    static {
+      defaultInstance = new GetConfigResponse(true);
+      voldemort.client.protocol.pb.VAdminProto.internalForceInit();
+      defaultInstance.initFields();
+    }
+    
+    // @@protoc_insertion_point(class_scope:voldemort.GetConfigResponse)
+  }
+  
+  public static final class MapFieldEntry extends
+      com.google.protobuf.GeneratedMessage {
+    // Use MapFieldEntry.newBuilder() to construct.
+    private MapFieldEntry() {
+      initFields();
+    }
+    private MapFieldEntry(boolean noInit) {}
+    
+    private static final MapFieldEntry defaultInstance;
+    public static MapFieldEntry getDefaultInstance() {
+      return defaultInstance;
+    }
+    
+    public MapFieldEntry getDefaultInstanceForType() {
+      return defaultInstance;
+    }
+    
+    public static final com.google.protobuf.Descriptors.Descriptor
+        getDescriptor() {
+      return voldemort.client.protocol.pb.VAdminProto.internal_static_voldemort_MapFieldEntry_descriptor;
+    }
+    
+    protected com.google.protobuf.GeneratedMessage.FieldAccessorTable
+        internalGetFieldAccessorTable() {
+      return voldemort.client.protocol.pb.VAdminProto.internal_static_voldemort_MapFieldEntry_fieldAccessorTable;
+    }
+    
+    // required string key = 1;
+    public static final int KEY_FIELD_NUMBER = 1;
+    private boolean hasKey;
+    private java.lang.String key_ = "";
+    public boolean hasKey() { return hasKey; }
+    public java.lang.String getKey() { return key_; }
+    
+    // required string value = 2;
+    public static final int VALUE_FIELD_NUMBER = 2;
+    private boolean hasValue;
+    private java.lang.String value_ = "";
+    public boolean hasValue() { return hasValue; }
+    public java.lang.String getValue() { return value_; }
+    
+    private void initFields() {
+    }
+    public final boolean isInitialized() {
+      if (!hasKey) return false;
+      if (!hasValue) return false;
+      return true;
+    }
+    
+    public void writeTo(com.google.protobuf.CodedOutputStream output)
+                        throws java.io.IOException {
+      getSerializedSize();
+      if (hasKey()) {
+        output.writeString(1, getKey());
+      }
+      if (hasValue()) {
+        output.writeString(2, getValue());
+      }
+      getUnknownFields().writeTo(output);
+    }
+    
+    private int memoizedSerializedSize = -1;
+    public int getSerializedSize() {
+      int size = memoizedSerializedSize;
+      if (size != -1) return size;
+    
+      size = 0;
+      if (hasKey()) {
+        size += com.google.protobuf.CodedOutputStream
+          .computeStringSize(1, getKey());
+      }
+      if (hasValue()) {
+        size += com.google.protobuf.CodedOutputStream
+          .computeStringSize(2, getValue());
+      }
+      size += getUnknownFields().getSerializedSize();
+      memoizedSerializedSize = size;
+      return size;
+    }
+    
+    public static voldemort.client.protocol.pb.VAdminProto.MapFieldEntry parseFrom(
+        com.google.protobuf.ByteString data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return newBuilder().mergeFrom(data).buildParsed();
+    }
+    public static voldemort.client.protocol.pb.VAdminProto.MapFieldEntry parseFrom(
+        com.google.protobuf.ByteString data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return newBuilder().mergeFrom(data, extensionRegistry)
+               .buildParsed();
+    }
+    public static voldemort.client.protocol.pb.VAdminProto.MapFieldEntry parseFrom(byte[] data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return newBuilder().mergeFrom(data).buildParsed();
+    }
+    public static voldemort.client.protocol.pb.VAdminProto.MapFieldEntry parseFrom(
+        byte[] data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return newBuilder().mergeFrom(data, extensionRegistry)
+               .buildParsed();
+    }
+    public static voldemort.client.protocol.pb.VAdminProto.MapFieldEntry parseFrom(java.io.InputStream input)
+        throws java.io.IOException {
+      return newBuilder().mergeFrom(input).buildParsed();
+    }
+    public static voldemort.client.protocol.pb.VAdminProto.MapFieldEntry parseFrom(
+        java.io.InputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return newBuilder().mergeFrom(input, extensionRegistry)
+               .buildParsed();
+    }
+    public static voldemort.client.protocol.pb.VAdminProto.MapFieldEntry parseDelimitedFrom(java.io.InputStream input)
+        throws java.io.IOException {
+      Builder builder = newBuilder();
+      if (builder.mergeDelimitedFrom(input)) {
+        return builder.buildParsed();
+      } else {
+        return null;
+      }
+    }
+    public static voldemort.client.protocol.pb.VAdminProto.MapFieldEntry parseDelimitedFrom(
+        java.io.InputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      Builder builder = newBuilder();
+      if (builder.mergeDelimitedFrom(input, extensionRegistry)) {
+        return builder.buildParsed();
+      } else {
+        return null;
+      }
+    }
+    public static voldemort.client.protocol.pb.VAdminProto.MapFieldEntry parseFrom(
+        com.google.protobuf.CodedInputStream input)
+        throws java.io.IOException {
+      return newBuilder().mergeFrom(input).buildParsed();
+    }
+    public static voldemort.client.protocol.pb.VAdminProto.MapFieldEntry parseFrom(
+        com.google.protobuf.CodedInputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return newBuilder().mergeFrom(input, extensionRegistry)
+               .buildParsed();
+    }
+    
+    public static Builder newBuilder() { return Builder.create(); }
+    public Builder newBuilderForType() { return newBuilder(); }
+    public static Builder newBuilder(voldemort.client.protocol.pb.VAdminProto.MapFieldEntry prototype) {
+      return newBuilder().mergeFrom(prototype);
+    }
+    public Builder toBuilder() { return newBuilder(this); }
+    
+    public static final class Builder extends
+        com.google.protobuf.GeneratedMessage.Builder<Builder> {
+      private voldemort.client.protocol.pb.VAdminProto.MapFieldEntry result;
+      
+      // Construct using voldemort.client.protocol.pb.VAdminProto.MapFieldEntry.newBuilder()
+      private Builder() {}
+      
+      private static Builder create() {
+        Builder builder = new Builder();
+        builder.result = new voldemort.client.protocol.pb.VAdminProto.MapFieldEntry();
+        return builder;
+      }
+      
+      protected voldemort.client.protocol.pb.VAdminProto.MapFieldEntry internalGetResult() {
+        return result;
+      }
+      
+      public Builder clear() {
+        if (result == null) {
+          throw new IllegalStateException(
+            "Cannot call clear() after build().");
+        }
+        result = new voldemort.client.protocol.pb.VAdminProto.MapFieldEntry();
+        return this;
+      }
+      
+      public Builder clone() {
+        return create().mergeFrom(result);
+      }
+      
+      public com.google.protobuf.Descriptors.Descriptor
+          getDescriptorForType() {
+        return voldemort.client.protocol.pb.VAdminProto.MapFieldEntry.getDescriptor();
+      }
+      
+      public voldemort.client.protocol.pb.VAdminProto.MapFieldEntry getDefaultInstanceForType() {
+        return voldemort.client.protocol.pb.VAdminProto.MapFieldEntry.getDefaultInstance();
+      }
+      
+      public boolean isInitialized() {
+        return result.isInitialized();
+      }
+      public voldemort.client.protocol.pb.VAdminProto.MapFieldEntry build() {
+        if (result != null && !isInitialized()) {
+          throw newUninitializedMessageException(result);
+        }
+        return buildPartial();
+      }
+      
+      private voldemort.client.protocol.pb.VAdminProto.MapFieldEntry buildParsed()
+          throws com.google.protobuf.InvalidProtocolBufferException {
+        if (!isInitialized()) {
+          throw newUninitializedMessageException(
+            result).asInvalidProtocolBufferException();
+        }
+        return buildPartial();
+      }
+      
+      public voldemort.client.protocol.pb.VAdminProto.MapFieldEntry buildPartial() {
+        if (result == null) {
+          throw new IllegalStateException(
+            "build() has already been called on this Builder.");
+        }
+        voldemort.client.protocol.pb.VAdminProto.MapFieldEntry returnMe = result;
+        result = null;
+        return returnMe;
+      }
+      
+      public Builder mergeFrom(com.google.protobuf.Message other) {
+        if (other instanceof voldemort.client.protocol.pb.VAdminProto.MapFieldEntry) {
+          return mergeFrom((voldemort.client.protocol.pb.VAdminProto.MapFieldEntry)other);
+        } else {
+          super.mergeFrom(other);
+          return this;
+        }
+      }
+      
+      public Builder mergeFrom(voldemort.client.protocol.pb.VAdminProto.MapFieldEntry other) {
+        if (other == voldemort.client.protocol.pb.VAdminProto.MapFieldEntry.getDefaultInstance()) return this;
+        if (other.hasKey()) {
+          setKey(other.getKey());
+        }
+        if (other.hasValue()) {
+          setValue(other.getValue());
+        }
+        this.mergeUnknownFields(other.getUnknownFields());
+        return this;
+      }
+      
+      public Builder mergeFrom(
+          com.google.protobuf.CodedInputStream input,
+          com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+          throws java.io.IOException {
+        com.google.protobuf.UnknownFieldSet.Builder unknownFields =
+          com.google.protobuf.UnknownFieldSet.newBuilder(
+            this.getUnknownFields());
+        while (true) {
+          int tag = input.readTag();
+          switch (tag) {
+            case 0:
+              this.setUnknownFields(unknownFields.build());
+              return this;
+            default: {
+              if (!parseUnknownField(input, unknownFields,
+                                     extensionRegistry, tag)) {
+                this.setUnknownFields(unknownFields.build());
+                return this;
+              }
+              break;
+            }
+            case 10: {
+              setKey(input.readString());
+              break;
+            }
+            case 18: {
+              setValue(input.readString());
+              break;
+            }
+          }
+        }
+      }
+      
+      
+      // required string key = 1;
+      public boolean hasKey() {
+        return result.hasKey();
+      }
+      public java.lang.String getKey() {
+        return result.getKey();
+      }
+      public Builder setKey(java.lang.String value) {
+        if (value == null) {
+    throw new NullPointerException();
+  }
+  result.hasKey = true;
+        result.key_ = value;
+        return this;
+      }
+      public Builder clearKey() {
+        result.hasKey = false;
+        result.key_ = getDefaultInstance().getKey();
+        return this;
+      }
+      
+      // required string value = 2;
+      public boolean hasValue() {
+        return result.hasValue();
+      }
+      public java.lang.String getValue() {
+        return result.getValue();
+      }
+      public Builder setValue(java.lang.String value) {
+        if (value == null) {
+    throw new NullPointerException();
+  }
+  result.hasValue = true;
+        result.value_ = value;
+        return this;
+      }
+      public Builder clearValue() {
+        result.hasValue = false;
+        result.value_ = getDefaultInstance().getValue();
+        return this;
+      }
+      
+      // @@protoc_insertion_point(builder_scope:voldemort.MapFieldEntry)
+    }
+    
+    static {
+      defaultInstance = new MapFieldEntry(true);
+      voldemort.client.protocol.pb.VAdminProto.internalForceInit();
+      defaultInstance.initFields();
+    }
+    
+    // @@protoc_insertion_point(class_scope:voldemort.MapFieldEntry)
+  }
+  
   public static final class VoldemortAdminRequest extends
       com.google.protobuf.GeneratedMessage {
     // Use VoldemortAdminRequest.newBuilder() to construct.
@@ -31106,6 +32347,13 @@ public final class VAdminProto {
     public boolean hasHandleFetchFailure() { return hasHandleFetchFailure; }
     public voldemort.client.protocol.pb.VAdminProto.HandleFetchFailureRequest getHandleFetchFailure() { return handleFetchFailure_; }
     
+    // optional .voldemort.GetConfigRequest get_config = 46;
+    public static final int GET_CONFIG_FIELD_NUMBER = 46;
+    private boolean hasGetConfig;
+    private voldemort.client.protocol.pb.VAdminProto.GetConfigRequest getConfig_;
+    public boolean hasGetConfig() { return hasGetConfig; }
+    public voldemort.client.protocol.pb.VAdminProto.GetConfigRequest getGetConfig() { return getConfig_; }
+    
     private void initFields() {
       type_ = voldemort.client.protocol.pb.VAdminProto.AdminRequestType.GET_METADATA;
       getMetadata_ = voldemort.client.protocol.pb.VAdminProto.GetMetadataRequest.getDefaultInstance();
@@ -31149,6 +32397,7 @@ public final class VAdminProto {
       getHaSettings_ = voldemort.client.protocol.pb.VAdminProto.GetHighAvailabilitySettingsRequest.getDefaultInstance();
       disableStoreVersion_ = voldemort.client.protocol.pb.VAdminProto.DisableStoreVersionRequest.getDefaultInstance();
       handleFetchFailure_ = voldemort.client.protocol.pb.VAdminProto.HandleFetchFailureRequest.getDefaultInstance();
+      getConfig_ = voldemort.client.protocol.pb.VAdminProto.GetConfigRequest.getDefaultInstance();
     }
     public final boolean isInitialized() {
       if (!hasType) return false;
@@ -31380,6 +32629,9 @@ public final class VAdminProto {
       if (hasHandleFetchFailure()) {
         output.writeMessage(45, getHandleFetchFailure());
       }
+      if (hasGetConfig()) {
+        output.writeMessage(46, getGetConfig());
+      }
       getUnknownFields().writeTo(output);
     }
     
@@ -31556,6 +32808,10 @@ public final class VAdminProto {
       if (hasHandleFetchFailure()) {
         size += com.google.protobuf.CodedOutputStream
           .computeMessageSize(45, getHandleFetchFailure());
+      }
+      if (hasGetConfig()) {
+        size += com.google.protobuf.CodedOutputStream
+          .computeMessageSize(46, getGetConfig());
       }
       size += getUnknownFields().getSerializedSize();
       memoizedSerializedSize = size;
@@ -31840,6 +33096,9 @@ public final class VAdminProto {
         }
         if (other.hasHandleFetchFailure()) {
           mergeHandleFetchFailure(other.getHandleFetchFailure());
+        }
+        if (other.hasGetConfig()) {
+          mergeGetConfig(other.getGetConfig());
         }
         this.mergeUnknownFields(other.getUnknownFields());
         return this;
@@ -32243,6 +33502,15 @@ public final class VAdminProto {
               }
               input.readMessage(subBuilder, extensionRegistry);
               setHandleFetchFailure(subBuilder.buildPartial());
+              break;
+            }
+            case 370: {
+              voldemort.client.protocol.pb.VAdminProto.GetConfigRequest.Builder subBuilder = voldemort.client.protocol.pb.VAdminProto.GetConfigRequest.newBuilder();
+              if (hasGetConfig()) {
+                subBuilder.mergeFrom(getGetConfig());
+              }
+              input.readMessage(subBuilder, extensionRegistry);
+              setGetConfig(subBuilder.buildPartial());
               break;
             }
           }
@@ -33788,6 +35056,43 @@ public final class VAdminProto {
         return this;
       }
       
+      // optional .voldemort.GetConfigRequest get_config = 46;
+      public boolean hasGetConfig() {
+        return result.hasGetConfig();
+      }
+      public voldemort.client.protocol.pb.VAdminProto.GetConfigRequest getGetConfig() {
+        return result.getGetConfig();
+      }
+      public Builder setGetConfig(voldemort.client.protocol.pb.VAdminProto.GetConfigRequest value) {
+        if (value == null) {
+          throw new NullPointerException();
+        }
+        result.hasGetConfig = true;
+        result.getConfig_ = value;
+        return this;
+      }
+      public Builder setGetConfig(voldemort.client.protocol.pb.VAdminProto.GetConfigRequest.Builder builderForValue) {
+        result.hasGetConfig = true;
+        result.getConfig_ = builderForValue.build();
+        return this;
+      }
+      public Builder mergeGetConfig(voldemort.client.protocol.pb.VAdminProto.GetConfigRequest value) {
+        if (result.hasGetConfig() &&
+            result.getConfig_ != voldemort.client.protocol.pb.VAdminProto.GetConfigRequest.getDefaultInstance()) {
+          result.getConfig_ =
+            voldemort.client.protocol.pb.VAdminProto.GetConfigRequest.newBuilder(result.getConfig_).mergeFrom(value).buildPartial();
+        } else {
+          result.getConfig_ = value;
+        }
+        result.hasGetConfig = true;
+        return this;
+      }
+      public Builder clearGetConfig() {
+        result.hasGetConfig = false;
+        result.getConfig_ = voldemort.client.protocol.pb.VAdminProto.GetConfigRequest.getDefaultInstance();
+        return this;
+      }
+      
       // @@protoc_insertion_point(builder_scope:voldemort.VoldemortAdminRequest)
     }
     
@@ -34231,6 +35536,21 @@ public final class VAdminProto {
     com.google.protobuf.GeneratedMessage.FieldAccessorTable
       internal_static_voldemort_HandleFetchFailureResponse_fieldAccessorTable;
   private static com.google.protobuf.Descriptors.Descriptor
+    internal_static_voldemort_GetConfigRequest_descriptor;
+  private static
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_voldemort_GetConfigRequest_fieldAccessorTable;
+  private static com.google.protobuf.Descriptors.Descriptor
+    internal_static_voldemort_GetConfigResponse_descriptor;
+  private static
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_voldemort_GetConfigResponse_fieldAccessorTable;
+  private static com.google.protobuf.Descriptors.Descriptor
+    internal_static_voldemort_MapFieldEntry_descriptor;
+  private static
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_voldemort_MapFieldEntry_fieldAccessorTable;
+  private static com.google.protobuf.Descriptors.Descriptor
     internal_static_voldemort_VoldemortAdminRequest_descriptor;
   private static
     com.google.protobuf.GeneratedMessage.FieldAccessorTable
@@ -34382,148 +35702,156 @@ public final class VAdminProto {
       "onse\022:\n\021ro_store_versions\030\001 \003(\0132\037.voldem" +
       "ort.ROStoreVersionDirMap\022\037\n\005error\030\002 \001(\0132" +
       "\020.voldemort.Error\"1\n\033GetROStorageFileLis" +
-      "tRequest\022\022\n\nstore_name\030\001 \002(\t\"R\n\034GetROSto" +
-      "rageFileListResponse\022\021\n\tfile_name\030\001 \003(\t\022",
-      "\037\n\005error\030\002 \001(\0132\020.voldemort.Error\")\n\'GetR" +
-      "OStorageCompressionCodecListRequest\"g\n(G" +
-      "etROStorageCompressionCodecListResponse\022" +
-      "\032\n\022compression_codecs\030\001 \003(\t\022\037\n\005error\030\002 \001" +
-      "(\0132\020.voldemort.Error\"@\n\027FailedFetchStore" +
-      "Request\022\022\n\nstore_name\030\001 \002(\t\022\021\n\tstore_dir" +
-      "\030\002 \002(\t\";\n\030FailedFetchStoreResponse\022\037\n\005er" +
-      "ror\030\001 \001(\0132\020.voldemort.Error\"\356\001\n\033Rebalanc" +
-      "eStateChangeRequest\022<\n\023rebalance_task_li" +
-      "st\030\001 \003(\0132\037.voldemort.RebalanceTaskInfoMa",
-      "p\022\026\n\016cluster_string\030\002 \002(\t\022\025\n\rstores_stri" +
-      "ng\030\003 \002(\t\022\017\n\007swap_ro\030\004 \002(\010\022\037\n\027change_clus" +
-      "ter_metadata\030\005 \002(\010\022\036\n\026change_rebalance_s" +
-      "tate\030\006 \002(\010\022\020\n\010rollback\030\007 \002(\010\"?\n\034Rebalanc" +
-      "eStateChangeResponse\022\037\n\005error\030\001 \001(\0132\020.vo" +
-      "ldemort.Error\"G\n DeleteStoreRebalanceSta" +
-      "teRequest\022\022\n\nstore_name\030\001 \002(\t\022\017\n\007node_id" +
-      "\030\002 \002(\005\"D\n!DeleteStoreRebalanceStateRespo" +
-      "nse\022\037\n\005error\030\001 \001(\0132\020.voldemort.Error\".\n\026" +
-      "SetOfflineStateRequest\022\024\n\014offline_mode\030\001",
-      " \002(\010\":\n\027SetOfflineStateResponse\022\037\n\005error" +
-      "\030\001 \001(\0132\020.voldemort.Error\"h\n\023NativeBackup" +
-      "Request\022\022\n\nstore_name\030\001 \002(\t\022\022\n\nbackup_di" +
-      "r\030\002 \002(\t\022\024\n\014verify_files\030\003 \002(\010\022\023\n\013increme" +
-      "ntal\030\004 \002(\010\">\n\024ReserveMemoryRequest\022\022\n\nst" +
-      "ore_name\030\001 \002(\t\022\022\n\nsize_in_mb\030\002 \002(\003\"8\n\025Re" +
-      "serveMemoryResponse\022\037\n\005error\030\001 \001(\0132\020.vol" +
-      "demort.Error\"$\n\"GetHighAvailabilitySetti" +
-      "ngsRequest\"\224\001\n#GetHighAvailabilitySettin" +
-      "gsResponse\022\017\n\007enabled\030\001 \002(\010\022\022\n\ncluster_i",
-      "d\030\002 \001(\t\022\030\n\020max_node_failure\030\003 \001(\005\022\021\n\tloc" +
-      "k_path\030\004 \001(\t\022\033\n\023lock_implementation\030\005 \001(" +
-      "\t\"T\n\032DisableStoreVersionRequest\022\022\n\nstore" +
-      "_name\030\001 \002(\t\022\024\n\014push_version\030\002 \002(\003\022\014\n\004inf" +
-      "o\030\003 \001(\t\"z\n\033DisableStoreVersionResponse\022\027" +
-      "\n\017disable_success\030\001 \002(\010\022#\n\033disable_persi" +
-      "stence_success\030\002 \001(\010\022\014\n\004info\030\003 \001(\t\022\017\n\007no" +
-      "de_id\030\004 \001(\005\"i\n\031HandleFetchFailureRequest" +
-      "\022\024\n\014failed_nodes\030\001 \003(\005\022\022\n\nstore_name\030\002 \002" +
-      "(\t\022\024\n\014push_version\030\003 \002(\003\022\014\n\004info\030\004 \001(\t\"\215",
-      "\001\n\032HandleFetchFailureResponse\022\030\n\020swap_is" +
-      "_possible\030\001 \002(\010\022\014\n\004info\030\002 \001(\t\022G\n\027disable" +
-      "_store_responses\030\003 \003(\0132&.voldemort.Disab" +
-      "leStoreVersionResponse\"\314\025\n\025VoldemortAdmi" +
-      "nRequest\022)\n\004type\030\001 \002(\0162\033.voldemort.Admin" +
-      "RequestType\0223\n\014get_metadata\030\002 \001(\0132\035.vold" +
-      "emort.GetMetadataRequest\0229\n\017update_metad" +
-      "ata\030\003 \001(\0132 .voldemort.UpdateMetadataRequ" +
-      "est\022J\n\030update_partition_entries\030\004 \001(\0132(." +
-      "voldemort.UpdatePartitionEntriesRequest\022",
-      "H\n\027fetch_partition_entries\030\005 \001(\0132\'.volde" +
-      "mort.FetchPartitionEntriesRequest\022J\n\030del" +
-      "ete_partition_entries\030\006 \001(\0132(.voldemort." +
-      "DeletePartitionEntriesRequest\022K\n\031initiat" +
-      "e_fetch_and_update\030\007 \001(\0132(.voldemort.Ini" +
-      "tiateFetchAndUpdateRequest\022F\n\026async_oper" +
-      "ation_status\030\010 \001(\0132&.voldemort.AsyncOper" +
-      "ationStatusRequest\022H\n\027initiate_rebalance" +
-      "_node\030\t \001(\0132\'.voldemort.InitiateRebalanc" +
-      "eNodeRequest\022B\n\024async_operation_stop\030\n \001",
-      "(\0132$.voldemort.AsyncOperationStopRequest" +
-      "\022B\n\024async_operation_list\030\013 \001(\0132$.voldemo" +
-      "rt.AsyncOperationListRequest\022;\n\020truncate" +
-      "_entries\030\014 \001(\0132!.voldemort.TruncateEntri" +
-      "esRequest\022-\n\tadd_store\030\r \001(\0132\032.voldemort" +
-      ".AddStoreRequest\0223\n\014delete_store\030\016 \001(\0132\035" +
-      ".voldemort.DeleteStoreRequest\0221\n\013fetch_s" +
-      "tore\030\017 \001(\0132\034.voldemort.FetchStoreRequest" +
-      "\022/\n\nswap_store\030\020 \001(\0132\033.voldemort.SwapSto" +
-      "reRequest\0227\n\016rollback_store\030\021 \001(\0132\037.vold",
-      "emort.RollbackStoreRequest\022D\n\026get_ro_max" +
-      "_version_dir\030\022 \001(\0132$.voldemort.GetROMaxV" +
-      "ersionDirRequest\022L\n\032get_ro_current_versi" +
-      "on_dir\030\023 \001(\0132(.voldemort.GetROCurrentVer" +
-      "sionDirRequest\022D\n\025fetch_partition_files\030" +
-      "\024 \001(\0132%.voldemort.FetchPartitionFilesReq" +
-      "uest\022@\n\023update_slop_entries\030\026 \001(\0132#.vold" +
-      "emort.UpdateSlopEntriesRequest\022>\n\022failed" +
-      "_fetch_store\030\030 \001(\0132\".voldemort.FailedFet" +
-      "chStoreRequest\022C\n\025get_ro_storage_format\030",
-      "\031 \001(\0132$.voldemort.GetROStorageFormatRequ" +
-      "est\022F\n\026rebalance_state_change\030\032 \001(\0132&.vo" +
-      "ldemort.RebalanceStateChangeRequest\022/\n\nr" +
-      "epair_job\030\033 \001(\0132\033.voldemort.RepairJobReq" +
-      "uest\022Q\n\034delete_store_rebalance_state\030\035 \001" +
-      "(\0132+.voldemort.DeleteStoreRebalanceState" +
-      "Request\0225\n\rnative_backup\030\036 \001(\0132\036.voldemo" +
-      "rt.NativeBackupRequest\0227\n\016reserve_memory" +
-      "\030\037 \001(\0132\037.voldemort.ReserveMemoryRequest\022" +
-      "-\n\tprune_job\030  \001(\0132\032.voldemort.PruneJobR",
-      "equest\0226\n\016slop_purge_job\030! \001(\0132\036.voldemo" +
-      "rt.SlopPurgeJobRequest\022B\n\024update_metadat" +
-      "a_pair\030\" \001(\0132$.voldemort.UpdateMetadataP" +
-      "airRequest\022C\n\030update_store_definitions\030#" +
-      " \001(\0132!.voldemort.UpdateStoreDefinitions\022" +
-      "<\n\021set_offline_state\030$ \001(\0132!.voldemort.S" +
-      "etOfflineStateRequest\022H\n\030get_ro_storage_" +
-      "file_list\030% \001(\0132&.voldemort.GetROStorage" +
-      "FileListRequest\022Y\n\035get_ro_compression_co" +
-      "dec_list\030& \001(\01322.voldemort.GetROStorageC",
-      "ompressionCodecListRequest\022@\n\023list_sched" +
-      "uled_jobs\030\' \001(\0132#.voldemort.ListSchedule" +
-      "dJobsRequest\022I\n\030get_scheduled_job_status" +
-      "\030( \001(\0132\'.voldemort.GetScheduledJobStatus" +
-      "Request\022>\n\022stop_scheduled_job\030) \001(\0132\".vo" +
-      "ldemort.StopScheduledJobRequest\022B\n\024enabl" +
-      "e_scheduled_job\030* \001(\0132$.voldemort.Enable" +
-      "ScheduledJobRequest\022F\n\017get_ha_settings\030+" +
-      " \001(\0132-.voldemort.GetHighAvailabilitySett" +
-      "ingsRequest\022D\n\025disable_store_version\030, \001",
-      "(\0132%.voldemort.DisableStoreVersionReques" +
-      "t\022B\n\024handle_fetch_failure\030- \001(\0132$.voldem" +
-      "ort.HandleFetchFailureRequest*\210\010\n\020AdminR" +
-      "equestType\022\020\n\014GET_METADATA\020\000\022\023\n\017UPDATE_M" +
-      "ETADATA\020\001\022\034\n\030UPDATE_PARTITION_ENTRIES\020\002\022" +
-      "\033\n\027FETCH_PARTITION_ENTRIES\020\003\022\034\n\030DELETE_P" +
-      "ARTITION_ENTRIES\020\004\022\035\n\031INITIATE_FETCH_AND" +
-      "_UPDATE\020\005\022\032\n\026ASYNC_OPERATION_STATUS\020\006\022\033\n" +
-      "\027INITIATE_REBALANCE_NODE\020\007\022\030\n\024ASYNC_OPER" +
-      "ATION_STOP\020\010\022\030\n\024ASYNC_OPERATION_LIST\020\t\022\024",
-      "\n\020TRUNCATE_ENTRIES\020\n\022\r\n\tADD_STORE\020\013\022\020\n\014D" +
-      "ELETE_STORE\020\014\022\017\n\013FETCH_STORE\020\r\022\016\n\nSWAP_S" +
-      "TORE\020\016\022\022\n\016ROLLBACK_STORE\020\017\022\032\n\026GET_RO_MAX" +
-      "_VERSION_DIR\020\020\022\036\n\032GET_RO_CURRENT_VERSION" +
-      "_DIR\020\021\022\031\n\025FETCH_PARTITION_FILES\020\022\022\027\n\023UPD" +
-      "ATE_SLOP_ENTRIES\020\024\022\026\n\022FAILED_FETCH_STORE" +
-      "\020\026\022\031\n\025GET_RO_STORAGE_FORMAT\020\027\022\032\n\026REBALAN" +
-      "CE_STATE_CHANGE\020\030\022\016\n\nREPAIR_JOB\020\031\022 \n\034DEL" +
-      "ETE_STORE_REBALANCE_STATE\020\033\022\021\n\rNATIVE_BA" +
-      "CKUP\020\034\022\022\n\016RESERVE_MEMORY\020\035\022\r\n\tPRUNE_JOB\020",
-      "\036\022\022\n\016SLOP_PURGE_JOB\020\037\022\030\n\024UPDATE_METADATA" +
-      "_PAIR\020 \022\034\n\030UPDATE_STORE_DEFINITIONS\020!\022\025\n" +
-      "\021SET_OFFLINE_STATE\020\"\022\034\n\030GET_RO_STORAGE_F" +
-      "ILE_LIST\020#\022!\n\035GET_RO_COMPRESSION_CODEC_L" +
-      "IST\020$\022\027\n\023LIST_SCHEDULED_JOBS\020%\022\034\n\030GET_SC" +
-      "HEDULED_JOB_STATUS\020&\022\026\n\022STOP_SCHEDULED_J" +
-      "OB\020\'\022\030\n\024ENABLE_SCHEDULED_JOB\020(\022\023\n\017GET_HA" +
-      "_SETTINGS\020)\022\031\n\025DISABLE_STORE_VERSION\020*\022\030" +
-      "\n\024HANDLE_FETCH_FAILURE\020+B-\n\034voldemort.cl" +
-      "ient.protocol.pbB\013VAdminProtoH\001"
+      "tRequest\022\022\n\nstore_name\030\001 \002(\t\"\203\001\n\034GetROSt" +
+      "orageFileListResponse\022\021\n\tfile_name\030\001 \003(\t",
+      "\022\037\n\005error\030\002 \001(\0132\020.voldemort.Error\022\026\n\016dat" +
+      "a_file_size\030\003 \003(\005\022\027\n\017index_file_size\030\004 \003" +
+      "(\005\")\n\'GetROStorageCompressionCodecListRe" +
+      "quest\"g\n(GetROStorageCompressionCodecLis" +
+      "tResponse\022\032\n\022compression_codecs\030\001 \003(\t\022\037\n" +
+      "\005error\030\002 \001(\0132\020.voldemort.Error\"@\n\027Failed" +
+      "FetchStoreRequest\022\022\n\nstore_name\030\001 \002(\t\022\021\n" +
+      "\tstore_dir\030\002 \002(\t\";\n\030FailedFetchStoreResp" +
+      "onse\022\037\n\005error\030\001 \001(\0132\020.voldemort.Error\"\356\001" +
+      "\n\033RebalanceStateChangeRequest\022<\n\023rebalan",
+      "ce_task_list\030\001 \003(\0132\037.voldemort.Rebalance" +
+      "TaskInfoMap\022\026\n\016cluster_string\030\002 \002(\t\022\025\n\rs" +
+      "tores_string\030\003 \002(\t\022\017\n\007swap_ro\030\004 \002(\010\022\037\n\027c" +
+      "hange_cluster_metadata\030\005 \002(\010\022\036\n\026change_r" +
+      "ebalance_state\030\006 \002(\010\022\020\n\010rollback\030\007 \002(\010\"?" +
+      "\n\034RebalanceStateChangeResponse\022\037\n\005error\030" +
+      "\001 \001(\0132\020.voldemort.Error\"G\n DeleteStoreRe" +
+      "balanceStateRequest\022\022\n\nstore_name\030\001 \002(\t\022" +
+      "\017\n\007node_id\030\002 \002(\005\"D\n!DeleteStoreRebalance" +
+      "StateResponse\022\037\n\005error\030\001 \001(\0132\020.voldemort",
+      ".Error\".\n\026SetOfflineStateRequest\022\024\n\014offl" +
+      "ine_mode\030\001 \002(\010\":\n\027SetOfflineStateRespons" +
+      "e\022\037\n\005error\030\001 \001(\0132\020.voldemort.Error\"h\n\023Na" +
+      "tiveBackupRequest\022\022\n\nstore_name\030\001 \002(\t\022\022\n" +
+      "\nbackup_dir\030\002 \002(\t\022\024\n\014verify_files\030\003 \002(\010\022" +
+      "\023\n\013incremental\030\004 \002(\010\">\n\024ReserveMemoryReq" +
+      "uest\022\022\n\nstore_name\030\001 \002(\t\022\022\n\nsize_in_mb\030\002" +
+      " \002(\003\"8\n\025ReserveMemoryResponse\022\037\n\005error\030\001" +
+      " \001(\0132\020.voldemort.Error\"$\n\"GetHighAvailab" +
+      "ilitySettingsRequest\"\224\001\n#GetHighAvailabi",
+      "litySettingsResponse\022\017\n\007enabled\030\001 \002(\010\022\022\n" +
+      "\ncluster_id\030\002 \001(\t\022\030\n\020max_node_failure\030\003 " +
+      "\001(\005\022\021\n\tlock_path\030\004 \001(\t\022\033\n\023lock_implement" +
+      "ation\030\005 \001(\t\"T\n\032DisableStoreVersionReques" +
+      "t\022\022\n\nstore_name\030\001 \002(\t\022\024\n\014push_version\030\002 " +
+      "\002(\003\022\014\n\004info\030\003 \001(\t\"z\n\033DisableStoreVersion" +
+      "Response\022\027\n\017disable_success\030\001 \002(\010\022#\n\033dis" +
+      "able_persistence_success\030\002 \001(\010\022\014\n\004info\030\003" +
+      " \001(\t\022\017\n\007node_id\030\004 \001(\005\"i\n\031HandleFetchFail" +
+      "ureRequest\022\024\n\014failed_nodes\030\001 \003(\005\022\022\n\nstor",
+      "e_name\030\002 \002(\t\022\024\n\014push_version\030\003 \002(\003\022\014\n\004in" +
+      "fo\030\004 \001(\t\"\215\001\n\032HandleFetchFailureResponse\022" +
+      "\030\n\020swap_is_possible\030\001 \002(\010\022\014\n\004info\030\002 \001(\t\022" +
+      "G\n\027disable_store_responses\030\003 \003(\0132&.volde" +
+      "mort.DisableStoreVersionResponse\"&\n\020GetC" +
+      "onfigRequest\022\022\n\nconfig_key\030\001 \003(\t\"w\n\021GetC" +
+      "onfigResponse\022,\n\nconfig_map\030\001 \003(\0132\030.vold" +
+      "emort.MapFieldEntry\0224\n\022invalid_config_ma" +
+      "p\030\002 \003(\0132\030.voldemort.MapFieldEntry\"+\n\rMap" +
+      "FieldEntry\022\013\n\003key\030\001 \002(\t\022\r\n\005value\030\002 \002(\t\"\375",
+      "\025\n\025VoldemortAdminRequest\022)\n\004type\030\001 \002(\0162\033" +
+      ".voldemort.AdminRequestType\0223\n\014get_metad" +
+      "ata\030\002 \001(\0132\035.voldemort.GetMetadataRequest" +
+      "\0229\n\017update_metadata\030\003 \001(\0132 .voldemort.Up" +
+      "dateMetadataRequest\022J\n\030update_partition_" +
+      "entries\030\004 \001(\0132(.voldemort.UpdatePartitio" +
+      "nEntriesRequest\022H\n\027fetch_partition_entri" +
+      "es\030\005 \001(\0132\'.voldemort.FetchPartitionEntri" +
+      "esRequest\022J\n\030delete_partition_entries\030\006 " +
+      "\001(\0132(.voldemort.DeletePartitionEntriesRe",
+      "quest\022K\n\031initiate_fetch_and_update\030\007 \001(\013" +
+      "2(.voldemort.InitiateFetchAndUpdateReque" +
+      "st\022F\n\026async_operation_status\030\010 \001(\0132&.vol" +
+      "demort.AsyncOperationStatusRequest\022H\n\027in" +
+      "itiate_rebalance_node\030\t \001(\0132\'.voldemort." +
+      "InitiateRebalanceNodeRequest\022B\n\024async_op" +
+      "eration_stop\030\n \001(\0132$.voldemort.AsyncOper" +
+      "ationStopRequest\022B\n\024async_operation_list" +
+      "\030\013 \001(\0132$.voldemort.AsyncOperationListReq" +
+      "uest\022;\n\020truncate_entries\030\014 \001(\0132!.voldemo",
+      "rt.TruncateEntriesRequest\022-\n\tadd_store\030\r" +
+      " \001(\0132\032.voldemort.AddStoreRequest\0223\n\014dele" +
+      "te_store\030\016 \001(\0132\035.voldemort.DeleteStoreRe" +
+      "quest\0221\n\013fetch_store\030\017 \001(\0132\034.voldemort.F" +
+      "etchStoreRequest\022/\n\nswap_store\030\020 \001(\0132\033.v" +
+      "oldemort.SwapStoreRequest\0227\n\016rollback_st" +
+      "ore\030\021 \001(\0132\037.voldemort.RollbackStoreReque" +
+      "st\022D\n\026get_ro_max_version_dir\030\022 \001(\0132$.vol" +
+      "demort.GetROMaxVersionDirRequest\022L\n\032get_" +
+      "ro_current_version_dir\030\023 \001(\0132(.voldemort",
+      ".GetROCurrentVersionDirRequest\022D\n\025fetch_" +
+      "partition_files\030\024 \001(\0132%.voldemort.FetchP" +
+      "artitionFilesRequest\022@\n\023update_slop_entr" +
+      "ies\030\026 \001(\0132#.voldemort.UpdateSlopEntriesR" +
+      "equest\022>\n\022failed_fetch_store\030\030 \001(\0132\".vol" +
+      "demort.FailedFetchStoreRequest\022C\n\025get_ro" +
+      "_storage_format\030\031 \001(\0132$.voldemort.GetROS" +
+      "torageFormatRequest\022F\n\026rebalance_state_c" +
+      "hange\030\032 \001(\0132&.voldemort.RebalanceStateCh" +
+      "angeRequest\022/\n\nrepair_job\030\033 \001(\0132\033.voldem",
+      "ort.RepairJobRequest\022Q\n\034delete_store_reb" +
+      "alance_state\030\035 \001(\0132+.voldemort.DeleteSto" +
+      "reRebalanceStateRequest\0225\n\rnative_backup" +
+      "\030\036 \001(\0132\036.voldemort.NativeBackupRequest\0227" +
+      "\n\016reserve_memory\030\037 \001(\0132\037.voldemort.Reser" +
+      "veMemoryRequest\022-\n\tprune_job\030  \001(\0132\032.vol" +
+      "demort.PruneJobRequest\0226\n\016slop_purge_job" +
+      "\030! \001(\0132\036.voldemort.SlopPurgeJobRequest\022B" +
+      "\n\024update_metadata_pair\030\" \001(\0132$.voldemort" +
+      ".UpdateMetadataPairRequest\022C\n\030update_sto",
+      "re_definitions\030# \001(\0132!.voldemort.UpdateS" +
+      "toreDefinitions\022<\n\021set_offline_state\030$ \001" +
+      "(\0132!.voldemort.SetOfflineStateRequest\022H\n" +
+      "\030get_ro_storage_file_list\030% \001(\0132&.voldem" +
+      "ort.GetROStorageFileListRequest\022Y\n\035get_r" +
+      "o_compression_codec_list\030& \001(\01322.voldemo" +
+      "rt.GetROStorageCompressionCodecListReque" +
+      "st\022@\n\023list_scheduled_jobs\030\' \001(\0132#.voldem" +
+      "ort.ListScheduledJobsRequest\022I\n\030get_sche" +
+      "duled_job_status\030( \001(\0132\'.voldemort.GetSc",
+      "heduledJobStatusRequest\022>\n\022stop_schedule" +
+      "d_job\030) \001(\0132\".voldemort.StopScheduledJob" +
+      "Request\022B\n\024enable_scheduled_job\030* \001(\0132$." +
+      "voldemort.EnableScheduledJobRequest\022F\n\017g" +
+      "et_ha_settings\030+ \001(\0132-.voldemort.GetHigh" +
+      "AvailabilitySettingsRequest\022D\n\025disable_s" +
+      "tore_version\030, \001(\0132%.voldemort.DisableSt" +
+      "oreVersionRequest\022B\n\024handle_fetch_failur" +
+      "e\030- \001(\0132$.voldemort.HandleFetchFailureRe" +
+      "quest\022/\n\nget_config\030. \001(\0132\033.voldemort.Ge",
+      "tConfigRequest*\230\010\n\020AdminRequestType\022\020\n\014G" +
+      "ET_METADATA\020\000\022\023\n\017UPDATE_METADATA\020\001\022\034\n\030UP" +
+      "DATE_PARTITION_ENTRIES\020\002\022\033\n\027FETCH_PARTIT" +
+      "ION_ENTRIES\020\003\022\034\n\030DELETE_PARTITION_ENTRIE" +
+      "S\020\004\022\035\n\031INITIATE_FETCH_AND_UPDATE\020\005\022\032\n\026AS" +
+      "YNC_OPERATION_STATUS\020\006\022\033\n\027INITIATE_REBAL" +
+      "ANCE_NODE\020\007\022\030\n\024ASYNC_OPERATION_STOP\020\010\022\030\n" +
+      "\024ASYNC_OPERATION_LIST\020\t\022\024\n\020TRUNCATE_ENTR" +
+      "IES\020\n\022\r\n\tADD_STORE\020\013\022\020\n\014DELETE_STORE\020\014\022\017" +
+      "\n\013FETCH_STORE\020\r\022\016\n\nSWAP_STORE\020\016\022\022\n\016ROLLB",
+      "ACK_STORE\020\017\022\032\n\026GET_RO_MAX_VERSION_DIR\020\020\022" +
+      "\036\n\032GET_RO_CURRENT_VERSION_DIR\020\021\022\031\n\025FETCH" +
+      "_PARTITION_FILES\020\022\022\027\n\023UPDATE_SLOP_ENTRIE" +
+      "S\020\024\022\026\n\022FAILED_FETCH_STORE\020\026\022\031\n\025GET_RO_ST" +
+      "ORAGE_FORMAT\020\027\022\032\n\026REBALANCE_STATE_CHANGE" +
+      "\020\030\022\016\n\nREPAIR_JOB\020\031\022 \n\034DELETE_STORE_REBAL" +
+      "ANCE_STATE\020\033\022\021\n\rNATIVE_BACKUP\020\034\022\022\n\016RESER" +
+      "VE_MEMORY\020\035\022\r\n\tPRUNE_JOB\020\036\022\022\n\016SLOP_PURGE" +
+      "_JOB\020\037\022\030\n\024UPDATE_METADATA_PAIR\020 \022\034\n\030UPDA" +
+      "TE_STORE_DEFINITIONS\020!\022\025\n\021SET_OFFLINE_ST",
+      "ATE\020\"\022\034\n\030GET_RO_STORAGE_FILE_LIST\020#\022!\n\035G" +
+      "ET_RO_COMPRESSION_CODEC_LIST\020$\022\027\n\023LIST_S" +
+      "CHEDULED_JOBS\020%\022\034\n\030GET_SCHEDULED_JOB_STA" +
+      "TUS\020&\022\026\n\022STOP_SCHEDULED_JOB\020\'\022\030\n\024ENABLE_" +
+      "SCHEDULED_JOB\020(\022\023\n\017GET_HA_SETTINGS\020)\022\031\n\025" +
+      "DISABLE_STORE_VERSION\020*\022\030\n\024HANDLE_FETCH_" +
+      "FAILURE\020+\022\016\n\nGET_CONFIG\020,B-\n\034voldemort.c" +
+      "lient.protocol.pbB\013VAdminProtoH\001"
     };
     com.google.protobuf.Descriptors.FileDescriptor.InternalDescriptorAssigner assigner =
       new com.google.protobuf.Descriptors.FileDescriptor.InternalDescriptorAssigner() {
@@ -35063,7 +36391,7 @@ public final class VAdminProto {
           internal_static_voldemort_GetROStorageFileListResponse_fieldAccessorTable = new
             com.google.protobuf.GeneratedMessage.FieldAccessorTable(
               internal_static_voldemort_GetROStorageFileListResponse_descriptor,
-              new java.lang.String[] { "FileName", "Error", },
+              new java.lang.String[] { "FileName", "Error", "DataFileSize", "IndexFileSize", },
               voldemort.client.protocol.pb.VAdminProto.GetROStorageFileListResponse.class,
               voldemort.client.protocol.pb.VAdminProto.GetROStorageFileListResponse.Builder.class);
           internal_static_voldemort_GetROStorageCompressionCodecListRequest_descriptor =
@@ -35218,12 +36546,36 @@ public final class VAdminProto {
               new java.lang.String[] { "SwapIsPossible", "Info", "DisableStoreResponses", },
               voldemort.client.protocol.pb.VAdminProto.HandleFetchFailureResponse.class,
               voldemort.client.protocol.pb.VAdminProto.HandleFetchFailureResponse.Builder.class);
-          internal_static_voldemort_VoldemortAdminRequest_descriptor =
+          internal_static_voldemort_GetConfigRequest_descriptor =
             getDescriptor().getMessageTypes().get(86);
+          internal_static_voldemort_GetConfigRequest_fieldAccessorTable = new
+            com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+              internal_static_voldemort_GetConfigRequest_descriptor,
+              new java.lang.String[] { "ConfigKey", },
+              voldemort.client.protocol.pb.VAdminProto.GetConfigRequest.class,
+              voldemort.client.protocol.pb.VAdminProto.GetConfigRequest.Builder.class);
+          internal_static_voldemort_GetConfigResponse_descriptor =
+            getDescriptor().getMessageTypes().get(87);
+          internal_static_voldemort_GetConfigResponse_fieldAccessorTable = new
+            com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+              internal_static_voldemort_GetConfigResponse_descriptor,
+              new java.lang.String[] { "ConfigMap", "InvalidConfigMap", },
+              voldemort.client.protocol.pb.VAdminProto.GetConfigResponse.class,
+              voldemort.client.protocol.pb.VAdminProto.GetConfigResponse.Builder.class);
+          internal_static_voldemort_MapFieldEntry_descriptor =
+            getDescriptor().getMessageTypes().get(88);
+          internal_static_voldemort_MapFieldEntry_fieldAccessorTable = new
+            com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+              internal_static_voldemort_MapFieldEntry_descriptor,
+              new java.lang.String[] { "Key", "Value", },
+              voldemort.client.protocol.pb.VAdminProto.MapFieldEntry.class,
+              voldemort.client.protocol.pb.VAdminProto.MapFieldEntry.Builder.class);
+          internal_static_voldemort_VoldemortAdminRequest_descriptor =
+            getDescriptor().getMessageTypes().get(89);
           internal_static_voldemort_VoldemortAdminRequest_fieldAccessorTable = new
             com.google.protobuf.GeneratedMessage.FieldAccessorTable(
               internal_static_voldemort_VoldemortAdminRequest_descriptor,
-              new java.lang.String[] { "Type", "GetMetadata", "UpdateMetadata", "UpdatePartitionEntries", "FetchPartitionEntries", "DeletePartitionEntries", "InitiateFetchAndUpdate", "AsyncOperationStatus", "InitiateRebalanceNode", "AsyncOperationStop", "AsyncOperationList", "TruncateEntries", "AddStore", "DeleteStore", "FetchStore", "SwapStore", "RollbackStore", "GetRoMaxVersionDir", "GetRoCurrentVersionDir", "FetchPartitionFiles", "UpdateSlopEntries", "FailedFetchStore", "GetRoStorageFormat", "RebalanceStateChange", "RepairJob", "DeleteStoreRebalanceState", "NativeBackup", "ReserveMemory", "PruneJob", "SlopPurgeJob", "UpdateMetadataPair", "UpdateStoreDefinitions", "SetOfflineState", "GetRoStorageFileList", "GetRoCompressionCodecList", "ListScheduledJobs", "GetScheduledJobStatus", "StopScheduledJob", "EnableScheduledJob", "GetHaSettings", "DisableStoreVersion", "HandleFetchFailure", },
+              new java.lang.String[] { "Type", "GetMetadata", "UpdateMetadata", "UpdatePartitionEntries", "FetchPartitionEntries", "DeletePartitionEntries", "InitiateFetchAndUpdate", "AsyncOperationStatus", "InitiateRebalanceNode", "AsyncOperationStop", "AsyncOperationList", "TruncateEntries", "AddStore", "DeleteStore", "FetchStore", "SwapStore", "RollbackStore", "GetRoMaxVersionDir", "GetRoCurrentVersionDir", "FetchPartitionFiles", "UpdateSlopEntries", "FailedFetchStore", "GetRoStorageFormat", "RebalanceStateChange", "RepairJob", "DeleteStoreRebalanceState", "NativeBackup", "ReserveMemory", "PruneJob", "SlopPurgeJob", "UpdateMetadataPair", "UpdateStoreDefinitions", "SetOfflineState", "GetRoStorageFileList", "GetRoCompressionCodecList", "ListScheduledJobs", "GetScheduledJobStatus", "StopScheduledJob", "EnableScheduledJob", "GetHaSettings", "DisableStoreVersion", "HandleFetchFailure", "GetConfig", },
               voldemort.client.protocol.pb.VAdminProto.VoldemortAdminRequest.class,
               voldemort.client.protocol.pb.VAdminProto.VoldemortAdminRequest.Builder.class);
           return null;

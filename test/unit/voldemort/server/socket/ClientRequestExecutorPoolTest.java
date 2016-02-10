@@ -287,7 +287,7 @@ public class ClientRequestExecutorPoolTest {
 
     @Test
     public void testNonExistentHost() throws Exception {
-        SocketDestination nonExistentHost = new SocketDestination("unknown.host",
+        SocketDestination nonExistentHost = new SocketDestination("unknown.invalid",
                                                                   port,
                                                                   RequestFormatType.VOLDEMORT_V1);
         testConnectionFailure(pool, nonExistentHost, UnresolvedAddressException.class);

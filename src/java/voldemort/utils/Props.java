@@ -27,11 +27,14 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
+import java.util.SortedSet;
+import java.util.TreeSet;
 
 import voldemort.annotations.concurrency.NotThreadsafe;
 
@@ -101,7 +104,12 @@ public class Props implements Map<String, String> {
 
     @Override
     public String get(Object key) {
-        return props.get(key);
+        try {
+            return props.get(key);
+        } catch (NullPointerException e) {
+            // Overriding NPEs so that we get a more informative message.
+            throw new NullPointerException("The key '" + key.toString() + "' contains a null value.");
+        }
     }
 
     @Override
@@ -131,6 +139,22 @@ public class Props implements Map<String, String> {
         return props.put(key, value.toString());
     }
 
+    public String put(String key, Boolean value) {
+        return props.put(key, value.toString());
+    }
+
+    public String put(String key, List<String> listOfValues) {
+        String serializedValue = null;
+        for (String singleValue: listOfValues) {
+            if (serializedValue == null) {
+                serializedValue = singleValue;
+            } else {
+                serializedValue += "," + singleValue;
+            }
+        }
+        return props.put(key, serializedValue);
+    }
+
     public Props with(String key, String value) {
         put(key, value);
         return this;
@@ -147,6 +171,11 @@ public class Props implements Map<String, String> {
     }
 
     public Props with(String key, Long value) {
+        put(key, value);
+        return this;
+    }
+
+    public Props with(String key, Boolean value) {
         put(key, value);
         return this;
     }
@@ -312,12 +341,36 @@ public class Props implements Map<String, String> {
 
     @Override
     public String toString() {
+        return toString(false);
+    }
+
+    public String toString(boolean oneLinePerEntry) {
         StringBuilder builder = new StringBuilder("{");
-        for(Entry<String, String> entry: this.props.entrySet()) {
+        boolean firstLine = true;
+        SortedSet<Entry<String, String>> sortedEntries =
+                new TreeSet<Entry<String, String>>(new Comparator<Entry<String, String>>(){
+                    @Override
+                    public int compare(Entry<String, String> o1, Entry<String, String> o2) {
+                        return o1.getKey().compareTo(o2.getKey());
+                    }
+                });
+        sortedEntries.addAll(this.props.entrySet());
+        for(Entry<String, String> entry: sortedEntries) {
+            if (oneLinePerEntry) {
+                builder.append("\n\t");
+            } else {
+                if (firstLine) {
+                    firstLine = false;
+                } else {
+                    builder.append(", ");
+                }
+            }
             builder.append(entry.getKey());
             builder.append(": ");
             builder.append(entry.getValue());
-            builder.append(", ");
+        }
+        if (oneLinePerEntry) {
+            builder.append("\n");
         }
         builder.append("}");
         return builder.toString();

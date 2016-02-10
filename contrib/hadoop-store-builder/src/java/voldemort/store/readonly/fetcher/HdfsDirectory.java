@@ -15,11 +15,13 @@ import org.apache.hadoop.fs.Path;
 import org.apache.log4j.Logger;
 
 import voldemort.VoldemortApplicationException;
+import voldemort.VoldemortException;
+import voldemort.server.VoldemortConfig;
+import voldemort.store.readonly.FileType;
 import voldemort.store.readonly.ReadOnlyStorageMetadata;
 import voldemort.store.readonly.ReadOnlyUtils;
 import voldemort.store.readonly.checksum.CheckSum;
 import voldemort.store.readonly.checksum.CheckSum.CheckSumType;
-import voldemort.store.readonly.fetcher.HdfsFile.FileType;
 import voldemort.utils.ByteUtils;
 
 
@@ -27,13 +29,15 @@ public class HdfsDirectory {
 
     private static final Logger logger = Logger.getLogger(HdfsDirectory.class);
 
-    private final FileSystem fs;
     private final Path source;
     private CheckSumType checkSumType = CheckSumType.NONE;
     private byte[] expectedCheckSum = null;
     private List<HdfsFile> allFiles = new ArrayList<HdfsFile>();
     private HdfsFile metadataFile = null;
     private ReadOnlyStorageMetadata metadata;
+    private long totalSizeOfChildren = 0;
+    private int numberOfFiles = 0;
+    private int numberOfSubDirectories = 0;
 
     private static final String CHECKSUM_FILE = "checkSum.txt";
 
@@ -51,16 +55,52 @@ public class HdfsDirectory {
         return metadataFile;
     }
 
-    public HdfsDirectory(FileSystem fs, Path source) throws IOException {
-        this.fs = fs;
+    public HdfsDirectory(FileSystem fs, Path source, VoldemortConfig voldemortConfig) throws IOException {
         this.source = source;
 
-        FileStatus[] files = fs.listStatus(source);
+        FileStatus[] files = null;
+        int maxAttempts = voldemortConfig.getReadOnlyFetchRetryCount();
+        for (int attempt = 1; attempt <= maxAttempts && files == null; attempt++) {
+            try {
+                files = fs.listStatus(source);
+                break;
+            } catch (Exception e) {
+                if(attempt < maxAttempts) {
+                    // We may need to sleep
+                    long retryDelayMs = voldemortConfig.getReadOnlyFetchRetryDelayMs();
+                    if (retryDelayMs > 0) {
+                        // Doing random back off so that all nodes do not end up swarming the NameNode
+                        long randomDelay = (long) (Math.random() * retryDelayMs + retryDelayMs);
+
+                        logger.error("Could not execute listStatus operation on attempt # " + attempt +
+                                " / " + maxAttempts + ". Trying again in " + randomDelay + " ms.");
+                        try {
+                            Thread.sleep(randomDelay);
+                        } catch(InterruptedException ie) {
+                            logger.error("Fetcher interrupted while waiting to retry", ie);
+                            Thread.currentThread().interrupt();
+                        }
+                    }
+                } else {
+                    throw new VoldemortException("Failed " + maxAttempts +
+                            " times attempting listStatus operations for path: " + source, e);
+                }
+            }
+        }
+
         if(files == null) {
             throw new VoldemortApplicationException(source + " is empty");
         }
 
         for(FileStatus file: files) {
+            // Bookkeeping
+            totalSizeOfChildren += file.getLen();
+            if (file.isDirectory()) {
+                numberOfSubDirectories++;
+            } else {
+                numberOfFiles++;
+            }
+
             String fileName = file.getPath().getName();
             if(fileName.contains(CHECKSUM_FILE)
                || (!fileName.contains(ReadOnlyUtils.METADATA_FILE_EXTENSION) && fileName.startsWith("."))) {
@@ -78,6 +118,18 @@ public class HdfsDirectory {
         Collections.sort(allFiles);
     }
 
+    public void initializeMetadata(ReadOnlyStorageMetadata metadata) {
+        checkSumType = metadata.getCheckSumType();
+        if(checkSumType != CheckSumType.NONE) {
+            try {
+                expectedCheckSum = metadata.getCheckSum();
+            } catch(DecoderException e) {
+                logger.error("Error decoding checksum", e);
+                throw new VoldemortApplicationException(e);
+            }
+        }
+    }
+
     public void initializeMetadata(File diskFile) {
         try {
             metadata = new ReadOnlyStorageMetadata(diskFile);
@@ -85,16 +137,7 @@ public class HdfsDirectory {
             logger.error("Error reading metadata file ", e);
             throw new VoldemortApplicationException(e);
         }
-
-        checkSumType = metadata.getCheckSumType();
-        if(checkSumType != CheckSumType.NONE) {
-            try {
-            expectedCheckSum = metadata.getCheckSum();
-            } catch(DecoderException e) {
-                logger.error("Error decoding checksum", e);
-                throw new VoldemortApplicationException(e);
-            }
-        }
+        initializeMetadata(metadata);
     }
 
     public List<HdfsFile> getFiles() {
@@ -135,4 +178,20 @@ public class HdfsDirectory {
         return this.metadata;
     }
 
+
+    public int getNumberOfSubDirectories() {
+        return numberOfSubDirectories;
+    }
+
+    public long getTotalSizeOfChildren() {
+        return totalSizeOfChildren;
+    }
+
+    public int getNumberOfFiles() {
+        return numberOfFiles;
+    }
+
+    public String toString() {
+        return source.toString();
+    }
 }

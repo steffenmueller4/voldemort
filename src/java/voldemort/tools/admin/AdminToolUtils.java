@@ -20,14 +20,19 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.util.*;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 
 import voldemort.VoldemortException;
-import voldemort.client.ClientConfig;
 import voldemort.client.protocol.admin.AdminClient;
-import voldemort.client.protocol.admin.AdminClientConfig;
 import voldemort.cluster.Node;
 import voldemort.store.StoreDefinition;
+import voldemort.store.UnreachableStoreException;
 import voldemort.store.metadata.MetadataStore;
 import voldemort.store.metadata.MetadataStore.VoldemortState;
 import voldemort.store.quota.QuotaUtils;
@@ -154,7 +159,7 @@ public class AdminToolUtils {
      * @return Newly constructed AdminClient
      */
     public static AdminClient getAdminClient(String url) {
-        return new AdminClient(url, new AdminClientConfig(), new ClientConfig());
+        return new AdminClient(url);
     }
 
     /**
@@ -328,7 +333,7 @@ public class AdminToolUtils {
      * @throws VoldemortException if any node is not in normal state
      */
     public static void assertServerInNormalState(AdminClient adminClient, Integer nodeId) {
-        assertServerInNormalState(adminClient, Lists.newArrayList(new Integer[] { nodeId }));
+        assertServerInNormalState(adminClient, Lists.newArrayList(new Integer[]{nodeId}));
     }
 
     /**
@@ -344,21 +349,7 @@ public class AdminToolUtils {
      */
     public static void assertServerInNormalState(AdminClient adminClient,
                                                  Collection<Integer> nodeIds) {
-        for(Integer nodeId: nodeIds) {
-            Versioned<String> versioned = adminClient.metadataMgmtOps.getRemoteMetadata(nodeId,
-                                                                                        MetadataStore.SERVER_STATE_KEY);
-            VoldemortState state = VoldemortState.valueOf(versioned.getValue());
-            if(!state.equals(VoldemortState.NORMAL_SERVER)) {
-                throw new VoldemortException("Cannot execute admin operation: "
-                                             + nodeId
-                                             + " ("
-                                             + adminClient.getAdminClientCluster()
-                                                          .getNodeById(nodeId)
-                                                          .getHost()
-                                             + ") is not in normal state, but in "
-                                             + versioned.getValue());
-            }
-        }
+        assertServerState(adminClient, nodeIds, VoldemortState.NORMAL_SERVER, true);
     }
 
     /**
@@ -374,19 +365,7 @@ public class AdminToolUtils {
      */
     public static void assertServerNotInOfflineState(AdminClient adminClient,
                                                      Collection<Integer> nodeIds) {
-        for(Integer nodeId: nodeIds) {
-            Versioned<String> versioned = adminClient.metadataMgmtOps.getRemoteMetadata(nodeId,
-                                                                                        MetadataStore.SERVER_STATE_KEY);
-            VoldemortState state = VoldemortState.valueOf(versioned.getValue());
-            if(state.equals(VoldemortState.OFFLINE_SERVER)) {
-                throw new VoldemortException("Cannot execute admin operation: "
-                                             + nodeId
-                                             + " ("
-                                             + adminClient.getAdminClientCluster()
-                                                          .getNodeById(nodeId)
-                                                          .getHost() + ") is in offline state.");
-            }
-        }
+        assertServerState(adminClient, nodeIds, VoldemortState.OFFLINE_SERVER, false);
     }
 
     /**
@@ -416,7 +395,7 @@ public class AdminToolUtils {
      * @throws VoldemortException if any node is in rebalancing state
      */
     public static void assertServerNotInRebalancingState(AdminClient adminClient, Integer nodeId) {
-        assertServerNotInRebalancingState(adminClient, Lists.newArrayList(new Integer[] { nodeId }));
+        assertServerNotInRebalancingState(adminClient, Lists.newArrayList(new Integer[]{nodeId}));
     }
 
     /**
@@ -432,17 +411,41 @@ public class AdminToolUtils {
      */
     public static void assertServerNotInRebalancingState(AdminClient adminClient,
                                                          Collection<Integer> nodeIds) {
+        assertServerState(adminClient, nodeIds, VoldemortState.REBALANCING_MASTER_SERVER, false);
+    }
+
+    /**
+     * Checks if nodes are in a given {@link VoldemortState}. Can also be
+     * used to ensure that nodes are NOT in a given {@link VoldemortState}.
+     *
+     * Either way, throws an exception if any node isn't as expected.
+     *
+     * @param adminClient An instance of AdminClient points to given cluster
+     * @param nodeIds List of node ids to be checked
+     * @param stateToCheck state to be verified
+     * @param serverMustBeInThisState - if true, function will throw if any
+     *                                server is NOT in the stateToCheck
+     *                                - if false, function will throw if any
+     *                                server IS in the stateToCheck
+     * @throws VoldemortException if any node doesn't conform to the required state
+     */
+    private static void assertServerState(AdminClient adminClient,
+                                          Collection<Integer> nodeIds,
+                                          VoldemortState stateToCheck,
+                                          boolean serverMustBeInThisState) {
         for(Integer nodeId: nodeIds) {
-            Versioned<String> versioned = adminClient.metadataMgmtOps.getRemoteMetadata(nodeId,
-                                                                                        MetadataStore.SERVER_STATE_KEY);
-            VoldemortState state = VoldemortState.valueOf(versioned.getValue());
-            if(state.equals(VoldemortState.REBALANCING_MASTER_SERVER)) {
-                throw new VoldemortException("Cannot execute admin operation: "
-                                             + nodeId
-                                             + " ("
-                                             + adminClient.getAdminClientCluster()
-                                                          .getNodeById(nodeId)
-                                                          .getHost() + ") is in rebalancing state.");
+            String nodeName = adminClient.getAdminClientCluster().getNodeById(nodeId).briefToString();
+            try {
+                Versioned<String> versioned = adminClient.metadataMgmtOps.getRemoteMetadata(nodeId,
+                                                                                            MetadataStore.SERVER_STATE_KEY);
+                VoldemortState state = VoldemortState.valueOf(versioned.getValue());
+                if(state.equals(stateToCheck) != serverMustBeInThisState) {
+                    throw new VoldemortException("Cannot execute admin operation: "
+                                                 + nodeName + " is " + (serverMustBeInThisState ? "not in " : "in ")
+                                                 + stateToCheck.name() + " state.");
+                }
+            } catch (UnreachableStoreException e) {
+                System.err.println("Cannot verify the server state of " + nodeName + " because it is unreachable. Skipping.");
             }
         }
     }

@@ -36,18 +36,19 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
-import com.google.common.collect.ImmutableList;
 import org.apache.avro.Schema;
+import org.apache.avro.mapred.AvroInputFormat;
 import org.apache.commons.lang.Validate;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.mapred.InputFormat;
 import org.apache.hadoop.mapred.JobConf;
 import org.apache.log4j.Logger;
 
 import voldemort.VoldemortException;
 import voldemort.client.ClientConfig;
 import voldemort.client.protocol.admin.AdminClient;
-import voldemort.client.protocol.admin.AdminClientConfig;
 import voldemort.client.protocol.pb.VAdminProto;
 import voldemort.cluster.Cluster;
 import voldemort.cluster.Node;
@@ -60,7 +61,10 @@ import voldemort.store.readonly.checksum.CheckSum.CheckSumType;
 import voldemort.store.readonly.disk.KeyValueWriter;
 import voldemort.store.readonly.hooks.BuildAndPushHook;
 import voldemort.store.readonly.hooks.BuildAndPushStatus;
-import voldemort.store.readonly.mr.azkaban.VoldemortStoreBuilderJob.VoldemortStoreBuilderConf;
+import voldemort.store.readonly.mr.AvroStoreBuilderMapper;
+import voldemort.store.readonly.mr.HadoopStoreBuilder;
+import voldemort.store.readonly.mr.JsonStoreBuilderMapper;
+import voldemort.store.readonly.mr.serialization.JsonSequenceFileInputFormat;
 import voldemort.store.readonly.mr.utils.AvroUtils;
 import voldemort.store.readonly.mr.utils.HadoopUtils;
 import voldemort.store.readonly.mr.utils.JsonSchema;
@@ -100,6 +104,7 @@ public class VoldemortBuildAndPushJob extends AbstractJob {
     public final static String BUILD_FORCE_SCHEMA_VALUE = "build.force.schema.value";
     public final static String BUILD_PREFERRED_READS = "build.preferred.reads";
     public final static String BUILD_PREFERRED_WRITES = "build.preferred.writes";
+    public final static String BUILD_PRIMARY_REPLICAS_ONLY = "build.primary.replicas.only";
     // push.required
     public final static String PUSH_STORE_NAME = "push.store.name";
     public final static String PUSH_CLUSTER = "push.cluster";
@@ -161,18 +166,21 @@ public class VoldemortBuildAndPushJob extends AbstractJob {
     private final ExecutorService executorService;
 
     // Mutable state
-    private List<StoreDefinition> storeDefs;
+    private StoreDefinition storeDef;
     private Path sanitizedInputPath = null;
     private Schema inputPathAvroSchema = null;
     private JsonSchema inputPathJsonSchema = null;
     private Future heartBeatHookFuture = null;
+    private Map<String, VAdminProto.GetHighAvailabilitySettingsResponse> haSettingsPerCluster;
+    private boolean buildPrimaryReplicasOnly;
 
     public VoldemortBuildAndPushJob(String name, azkaban.utils.Props azkabanProps) {
         super(name, Logger.getLogger(name));
         this.log = getLog();
-        log.info("Job props.toString(): " + azkabanProps.toString());
 
         this.props = new Props(azkabanProps.toProperties());
+        log.info("Job props:\n" + this.props.toString(true));
+
         this.storeName = props.getString(PUSH_STORE_NAME).trim();
         this.clusterURLs = new ArrayList<String>();
         this.dataDirs = new ArrayList<String>();
@@ -182,7 +190,9 @@ public class VoldemortBuildAndPushJob extends AbstractJob {
         for(String url: Utils.COMMA_SEP.split(clusterUrlText.trim())) {
             if(url.trim().length() > 0) {
                 this.clusterURLs.add(url);
-                AdminClient adminClient = new AdminClient(url, new AdminClientConfig(), new ClientConfig());
+                AdminClient adminClient = new AdminClient(new ClientConfig().setBootstrapUrls(url)
+                                                                            .setConnectionTimeout(15,
+                                                                                                  TimeUnit.SECONDS));
                 this.adminClientPerCluster.put(url, adminClient);
                 this.closeables.add(adminClient);
             }
@@ -310,8 +320,19 @@ public class VoldemortBuildAndPushJob extends AbstractJob {
      *         equal number of nodes and same partition ids
      */
     private boolean areTwoClustersEqual(final Cluster lhs, final Cluster rhs) {
+        // There is no way for us to support pushing to multiple clusters with
+        // different numbers of partitions from a single BnP job.
         if (lhs.getNumberOfPartitions() != rhs.getNumberOfPartitions())
             return false;
+
+        if (buildPrimaryReplicasOnly) {
+            // In 'build.primary.replicas.only' mode, we can support pushing to
+            // clusters with different number of nodes and different partition
+            // assignments.
+            return true;
+        }
+
+        // Otherwise, we need every corresponding node in each cluster to be identical.
         if (!lhs.getNodeIds().equals(rhs.getNodeIds()))
             return false;
         for (Node lhsNode: lhs.getNodes()) {
@@ -366,46 +387,101 @@ public class VoldemortBuildAndPushJob extends AbstractJob {
         }
     }
 
-    private String getMatchingServerSupportedCompressionCodec() {
-        /*
-         * Strict operational assumption made by this method: All clusters have symmetrical settings.
-         *
-         * Currently this method requests only one cluster for its supported compression codec.
-         */
+    /**
+     * This function takes care of interrogating the servers to know which optional
+     * features are supported and enabled, including:
+     *
+     *      1) block-level compression,
+     *      2) high-availability push,
+     *      3) build primary replicas only.
+     *
+     * TODO: Eventually, it'd be nice to migrate all of these code paths to the new simpler API:
+     * {@link AdminClient.MetadataManagementOperations#getServerConfig(int, java.util.Set)}
+     *
+     * This function mutates the internal state of the job accordingly.
+     */
+    private void negotiateJobSettingsWithServers() {
+        // 1. Get block-level compression settings
 
+        // FIXME: Currently this code requests only one cluster for its supported compression codec.
         log.info("Requesting block-level compression codec expected by Server");
-
+        String chosenCodec = null;
         List<String> supportedCodecs;
         try{
             supportedCodecs = adminClientPerCluster.get(clusterURLs.get(0))
                     .readonlyOps.getSupportedROStorageCompressionCodecs();
+
+            String codecList = "[ ";
+            for(String str: supportedCodecs) {
+                codecList += str + " ";
+            }
+            codecList += "]";
+            log.info("Server responded with block-level compression codecs: " + codecList);
+            /*
+             * TODO for now only checking if there is a match between the server
+             * supported codec and the one that we support. Later this method can be
+             * extended to add more compression types or pick the first type
+             * returned by the server.
+             */
+
+            for(String codecStr: supportedCodecs) {
+                if(codecStr.toUpperCase(Locale.ENGLISH).equals(KeyValueWriter.COMPRESSION_CODEC)) {
+                    chosenCodec = codecStr;
+                    break;
+                }
+            }
         } catch(Exception e) {
             log.error("Exception thrown when requesting for supported block-level compression codecs. " +
-                    "Server might be running in a older version. Exception: "
-                     + e.getMessage());
-            // return here
-            return null;
+                      "Server might be running in a older version. Exception: " + e.getMessage());
+            // We will continue without block-level compression enabled
         }
 
-        String codecList = "[ ";
-        for(String str: supportedCodecs) {
-            codecList += str + " ";
+        if(chosenCodec != null) {
+            log.info("Using block-level compression codec: " + chosenCodec);
+            this.props.put(REDUCER_OUTPUT_COMPRESS, "true");
+            this.props.put(REDUCER_OUTPUT_COMPRESS_CODEC, chosenCodec);
+        } else {
+            log.info("Using no block-level compression");
         }
-        codecList += "]";
-        log.info("Server responded with block-level compression codecs: " + codecList);
-        /*
-         * TODO for now only checking if there is a match between the server
-         * supported codec and the one that we support. Later this method can be
-         * extended to add more compression types or pick the first type
-         * returned by the server.
-         */
 
-        for(String codecStr: supportedCodecs) {
-            if(codecStr.toUpperCase(Locale.ENGLISH).equals(KeyValueWriter.COMPRESSION_CODEC)) {
-                return codecStr;
+        // 2. Get High-Availability settings
+
+        this.haSettingsPerCluster = Maps.newHashMap();
+        if (!pushHighAvailability) {
+            log.info("pushHighAvailability is disabled by the job config.");
+        } else {
+            // HA is enabled by the BnP job config
+            for (String clusterUrl: clusterURLs) {
+                try {
+                    VAdminProto.GetHighAvailabilitySettingsResponse serverSettings =
+                            adminClientPerCluster.get(clusterUrl).readonlyOps.getHighAvailabilitySettings();
+                    this.haSettingsPerCluster.put(clusterUrl, serverSettings);
+                } catch (UninitializedMessageException e) {
+                    // Not printing out the exception in the logs as that is a benign error.
+                    log.error("The server does not support HA (introduced in release 1.9.20), so " +
+                              "pushHighAvailability will be DISABLED on cluster: " + clusterUrl);
+                } catch (Exception e) {
+                    log.error("Got exception while trying to determine pushHighAvailability settings on cluster: " + clusterUrl, e);
+                }
             }
         }
-        return null; // no matching compression codec. defaults to uncompressed data.
+
+        // 3. Get "build.primary.replicas.only" setting
+
+        Map<String, String> expectedConfig = Maps.newHashMap();
+        expectedConfig.put(VoldemortConfig.READONLY_BUILD_PRIMARY_REPLICAS_ONLY, Boolean.toString(true));
+        this.buildPrimaryReplicasOnly = true;
+        for (String clusterUrl: clusterURLs) {
+            VAdminProto.GetHighAvailabilitySettingsResponse serverSettings = haSettingsPerCluster.get(clusterUrl);
+            int maxNodeFailuresForCluster = 0;
+            if (serverSettings != null) {
+                maxNodeFailuresForCluster = serverSettings.getMaxNodeFailure();
+            }
+            if (!adminClientPerCluster.get(clusterUrl).metadataMgmtOps.validateServerConfig(expectedConfig, maxNodeFailuresForCluster)) {
+                log.info("'" + BUILD_PRIMARY_REPLICAS_ONLY + "' is not supported on this destination cluster: " + clusterUrl);
+                this.buildPrimaryReplicasOnly = false;
+            }
+        }
     }
 
     private class StorePushTask implements Callable<Boolean> {
@@ -451,24 +527,19 @@ public class VoldemortBuildAndPushJob extends AbstractJob {
             // These two options control the build and push phases of the job respectively.
             boolean build = props.getBoolean(BUILD, true);
             boolean push = props.getBoolean(PUSH, true);
-
             checkForPreconditions(build, push);
 
+            negotiateJobSettingsWithServers();
+
             try {
+                // The cluster equality check is performed after negotiating job settings
+                // with the servers because the constraints are relaxed if the servers
+                // support/enable the 'build.primary.replicas.only' mode.
                 allClustersEqual(clusterURLs);
             } catch(VoldemortException e) {
                 log.error("Exception during cluster equality check", e);
                 fail("Exception during cluster equality check: " + e.toString());
-                return;
-            }
-
-            String reducerOutputCompressionCodec = getMatchingServerSupportedCompressionCodec();
-            if(reducerOutputCompressionCodec != null) {
-                log.info("Using block-level compression codec: " + reducerOutputCompressionCodec);
-                props.put(REDUCER_OUTPUT_COMPRESS, "true");
-                props.put(REDUCER_OUTPUT_COMPRESS_CODEC, reducerOutputCompressionCodec);
-            } else {
-                log.info("Using no block-level compression");
+                throw e;
             }
 
             // Create a hashmap to capture exception per url
@@ -588,54 +659,50 @@ public class VoldemortBuildAndPushJob extends AbstractJob {
     }
 
     public String runBuildStore(Props props, String url) throws Exception {
-        int replicationFactor = props.getInt(BUILD_REPLICATION_FACTOR, 2);
-        int chunkSize = props.getInt(BUILD_CHUNK_SIZE, 1024 * 1024 * 1024);
-        Path tempDir = new Path(props.getString(BUILD_TEMP_DIR, "/tmp/vold-build-and-push-"
-                + new Random().nextLong()));
-        URI uri = new URI(url);
-        Path outputDir = new Path(props.getString(BUILD_OUTPUT_DIR), uri.getHost());
-        Path inputPath = getInputPath();
+        Path tempDir = new Path(props.getString(BUILD_TEMP_DIR, "/tmp/vold-build-and-push-" + new Random().nextLong()));
+        Path outputDir = new Path(props.getString(BUILD_OUTPUT_DIR), new URI(url).getHost());
         CheckSumType checkSumType = CheckSum.fromString(props.getString(CHECKSUM_TYPE,
                                                                         CheckSum.toString(CheckSumType.MD5)));
-        boolean saveKeys = props.getBoolean(SAVE_KEYS, true);
-        boolean reducerPerBucket = props.getBoolean(REDUCER_PER_BUCKET, false);
-        int numChunks = props.getInt(NUM_CHUNKS, -1);
+        JobConf configuration = new JobConf();
+        Class mapperClass;
+        Class<? extends InputFormat> inputFormatClass;
 
-        String recSchema = null;
-        String keySchema = null;
-        String valSchema = null;
-
-        if(isAvroJob) {
-            recSchema = getRecordSchema();
-            keySchema = getKeySchema();
-            valSchema = getValueSchema();
+        // Only if its a avro job we supply some additional fields
+        // for the key value schema of the avro record
+        if(this.isAvroJob) {
+            configuration.set("avro.rec.schema", getRecordSchema());
+            configuration.set("avro.key.schema", getKeySchema());
+            configuration.set("avro.val.schema", getValueSchema());
+            configuration.set(VoldemortBuildAndPushJob.AVRO_KEY_FIELD, this.keyFieldName);
+            configuration.set(VoldemortBuildAndPushJob.AVRO_VALUE_FIELD, this.valueFieldName);
+            mapperClass = AvroStoreBuilderMapper.class;
+            inputFormatClass = AvroInputFormat.class;
+        } else {
+            mapperClass = JsonStoreBuilderMapper.class;
+            inputFormatClass = JsonSequenceFileInputFormat.class;
         }
 
-        Cluster cluster = adminClientPerCluster.get(url).getAdminClientCluster();
+        HadoopStoreBuilder builder = new HadoopStoreBuilder(getId() + "-build-store",
+                                                            props,
+                                                            configuration,
+                                                            mapperClass,
+                                                            inputFormatClass,
+                                                            this.adminClientPerCluster.get(url).getAdminClientCluster(),
+                                                            this.storeDef,
+                                                            tempDir,
+                                                            outputDir,
+                                                            getInputPath(),
+                                                            checkSumType,
+                                                            props.getBoolean(SAVE_KEYS, true),
+                                                            props.getBoolean(REDUCER_PER_BUCKET, true),
+                                                            props.getInt(BUILD_CHUNK_SIZE, 1024 * 1024 * 1024),
+                                                            props.getInt(NUM_CHUNKS, -1),
+                                                            this.isAvroJob,
+                                                            this.minNumberOfRecords,
+                                                            this.buildPrimaryReplicasOnly);
 
-        new VoldemortStoreBuilderJob(
-                this.getId() + "-build-store",
-                props,
-                new VoldemortStoreBuilderConf(
-                        replicationFactor,
-                        chunkSize,
-                        tempDir,
-                        outputDir,
-                        inputPath,
-                        cluster,
-                        storeDefs,
-                        storeName,
-                        checkSumType,
-                        saveKeys,
-                        reducerPerBucket,
-                        numChunks,
-                        keyFieldName,
-                        valueFieldName,
-                        recSchema,
-                        keySchema,
-                        valSchema,
-                        isAvroJob,
-                        minNumberOfRecords)).run();
+        builder.build();
+
         return outputDir.toString();
     }
 
@@ -649,38 +716,27 @@ public class VoldemortBuildAndPushJob extends AbstractJob {
         }
         int maxBackoffDelayMs = 1000 * props.getInt(PUSH_BACKOFF_DELAY_SECONDS, 60);
         List<FailedFetchStrategy> failedFetchStrategyList = Lists.newArrayList();
-        int maxNodeFailures = 0;
+        int maxNodeFailures = 0; // Default (when BnP HA is not enabled) is potentially overridden below.
 
-        if (!pushHighAvailability) {
-            log.info("pushHighAvailability is disabled by the job config.");
-        } else {
+        if (pushHighAvailability) {
             // HA is enabled by the BnP job config
-            try {
-                VAdminProto.GetHighAvailabilitySettingsResponse serverSettings =
-                        adminClientPerCluster.get(url).readonlyOps.getHighAvailabilitySettings();
+            VAdminProto.GetHighAvailabilitySettingsResponse serverSettings = haSettingsPerCluster.get(url);
 
-                if (!serverSettings.getEnabled()) {
-                    log.warn("The server requested pushHighAvailability to be DISABLED on cluster: " + url);
-                } else {
-                    // HA is enabled by the server config
-                    maxNodeFailures = serverSettings.getMaxNodeFailure();
-                    OutputStream outputStream = new ByteArrayOutputStream();
-                    props.storeFlattened(outputStream);
-                    outputStream.flush();
-                    String jobInfoString = outputStream.toString();
-                    failedFetchStrategyList.add(
-                            new DisableStoreOnFailedNodeFailedFetchStrategy(
-                                    adminClientPerCluster.get(url),
-                                    jobInfoString));
-                    log.info("pushHighAvailability is enabled for cluster URL: " + url +
-                            " with cluster ID: " + serverSettings.getClusterId());
-                }
-            } catch (UninitializedMessageException e) {
-                // Not printing out the exception in the logs as that is a benign error.
-                log.error("The server does not support HA (introduced in release 1.9.20), so " +
-                        "pushHighAvailability will be DISABLED on cluster: " + url);
-            } catch (Exception e) {
-                log.error("Got exception while trying to determine pushHighAvailability settings on cluster: " + url, e);
+            if (serverSettings == null || !serverSettings.getEnabled()) {
+                log.warn("pushHighAvailability is DISABLED on cluster: " + url);
+            } else {
+                // HA is enabled by the server config
+                maxNodeFailures = serverSettings.getMaxNodeFailure();
+                OutputStream outputStream = new ByteArrayOutputStream();
+                props.storeFlattened(outputStream);
+                outputStream.flush();
+                String jobInfoString = outputStream.toString();
+                failedFetchStrategyList.add(
+                        new DisableStoreOnFailedNodeFailedFetchStrategy(
+                                adminClientPerCluster.get(url),
+                                jobInfoString));
+                log.info("pushHighAvailability is enabled for cluster URL: " + url +
+                        " with cluster ID: " + serverSettings.getClusterId());
             }
         }
 
@@ -708,7 +764,8 @@ public class VoldemortBuildAndPushJob extends AbstractJob {
                 hdfsFetcherPort,
                 maxNodeFailures,
                 failedFetchStrategyList,
-                url).run();
+                url,
+                buildPrimaryReplicasOnly).run();
     }
 
     /**
@@ -876,7 +933,7 @@ public class VoldemortBuildAndPushJob extends AbstractJob {
             // Next time BnP is run while the node is up, it will get the store created.
         } // Other exceptions need to bubble up!
 
-        storeDefs = ImmutableList.of(newStoreDef);
+        storeDef = newStoreDef;
     }
 
     private class HeartBeatHookRunnable implements Runnable {

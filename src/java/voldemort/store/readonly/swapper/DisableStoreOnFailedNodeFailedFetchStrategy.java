@@ -1,12 +1,17 @@
 package voldemort.store.readonly.swapper;
 
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
 import voldemort.client.protocol.admin.AdminClient;
 import voldemort.cluster.Node;
-import voldemort.store.quota.QuotaExceededException;
+import voldemort.server.protocol.admin.ReadOnlyFetchDisabledException;
+import voldemort.store.UnreachableStoreException;
 import voldemort.store.readonly.swapper.AdminStoreSwapper.Response;
+import voldemort.utils.ExceptionUtils;
 
 import com.google.common.collect.Lists;
 
@@ -27,25 +32,36 @@ public class DisableStoreOnFailedNodeFailedFetchStrategy extends FailedFetchStra
                                  long pushVersion,
                                  Map<Node, AdminStoreSwapper.Response> fetchResponseMap)
             throws Exception {
-        int numQuotaExceptions = 0;
+        List<String> hardFailures = new ArrayList<String>();
         List<Integer> failedNodes = Lists.newArrayList();
         for(Map.Entry<Node, AdminStoreSwapper.Response> entry: fetchResponseMap.entrySet()) {
-            // Only consider non Quota related exceptions as Failures.
             Response response = entry.getValue();
             if(!response.isSuccessful()) {
-                // Check if there are any exceptions due to Quota
-                if(response.getException() instanceof QuotaExceededException) {
-                    numQuotaExceptions++;
+                Exception ex = response.getException();
+                Class[] softErrors = {UnreachableStoreException.class , IOException.class , ReadOnlyFetchDisabledException.class };
+                boolean isSoftError = false;
+                for(Class softError : softErrors) {
+                    if(ExceptionUtils.recursiveClassEquals(ex, softError)) {
+                        isSoftError = true;
+                        break;
+                    }
+                }
+
+                Node node = entry.getKey();
+                if(isSoftError) {
+                    int nodeId = node.getId();
+                    failedNodes.add(nodeId);
                 } else {
-                    failedNodes.add(entry.getKey().getId());
+                    String nodeErrorMessage = node.briefToString() + " threw exception "
+                                              + ex.getClass().getName() + ". ";
+                    hardFailures.add(nodeErrorMessage);
                 }
             }
         }
-        // QuotaException trumps all others
-        if(numQuotaExceptions > 0) {
-            logger.error("We cannot use "
-                         + getClass().getSimpleName()
-                         + " because there are QuotaExceededExceptions that caused fetch failures...");
+
+        if(hardFailures.size() > 0) {
+            String errorMessage = Arrays.toString(hardFailures.toArray());
+            logger.error("There were non connection related errors. Details " + errorMessage);
             return false;
         }
         return adminClient.readonlyOps.handleFailedFetch(failedNodes,

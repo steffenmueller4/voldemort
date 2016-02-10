@@ -108,6 +108,7 @@ public class VoldemortServer extends AbstractService {
     public VoldemortServer(VoldemortConfig config) {
         super(ServiceType.VOLDEMORT);
         this.voldemortConfig = config;
+        this.setupSSLProvider();
         this.storeRepository = new StoreRepository(config.isJmxEnabled());
         this.metadata = MetadataStore.readFromDirectory(new File(this.voldemortConfig.getMetadataDirectory()),
                                                         voldemortConfig.getNodeId());
@@ -128,6 +129,7 @@ public class VoldemortServer extends AbstractService {
     public VoldemortServer(VoldemortConfig config, Cluster cluster) {
         super(ServiceType.VOLDEMORT);
         this.voldemortConfig = config;
+        this.setupSSLProvider();
         this.identityNode = cluster.getNodeById(voldemortConfig.getNodeId());
 
         this.checkHostName();
@@ -157,6 +159,18 @@ public class VoldemortServer extends AbstractService {
         this.basicServices = createBasicServices();
         createOnlineServices();
     }
+
+    private void setupSSLProvider() {
+        if (voldemortConfig.isBouncyCastleEnabled()) {
+            // This is just a one line method, but using a separate class to
+            // avoid loading the BouncyCastle. This will enable the
+            // VoldemortServer to run without BouncyCastle in the class path
+            // unless enabled explicitly.
+            SetupSSLProvider.useBouncyCastle();
+        }
+    }
+
+
 
     public AsyncOperationService getAsyncRunner() {
         return asyncService;
@@ -500,8 +514,8 @@ public class VoldemortServer extends AbstractService {
                 croak("USAGE: java " + VoldemortServer.class.getName()
                       + " [voldemort_home_dir] [voldemort_config_dir]");
         } catch(Exception e) {
-            logger.error(e);
-            Utils.croak("Error while loading configuration: " + e.getMessage());
+            logger.error("Error while loading configuration", e);
+            Utils.croak("Error while loading configuration. Will exit.");
         }
 
         final VoldemortServer server = new VoldemortServer(config);

@@ -49,11 +49,15 @@ import voldemort.client.SocketStoreClientFactory;
 import voldemort.client.StoreClient;
 import voldemort.client.protocol.RequestFormatType;
 import voldemort.client.protocol.admin.AdminClient;
-import voldemort.client.protocol.admin.AdminClientConfig;
+import voldemort.cluster.Cluster;
 import voldemort.cluster.Node;
 import voldemort.cluster.failuredetector.FailureDetector;
+import voldemort.routing.RoutingStrategy;
+import voldemort.routing.RoutingStrategyFactory;
 import voldemort.serialization.SerializationException;
+import voldemort.serialization.Serializer;
 import voldemort.serialization.SerializerDefinition;
+import voldemort.serialization.SerializerFactory;
 import voldemort.serialization.json.EndOfFileException;
 import voldemort.serialization.json.JsonReader;
 import voldemort.store.StoreDefinition;
@@ -82,6 +86,8 @@ public class VoldemortClientShell {
 
     private StoreDefinition storeDef;
 
+    private RoutingStrategy routingStrategy;
+
     protected final BufferedReader commandReader;
 
     protected final PrintStream commandOutput;
@@ -108,16 +114,18 @@ public class VoldemortClientShell {
         this.commandOutput = commandOutput;
         this.errorStream = errorStream;
 
-        String bootstrapUrl = clientConfig.getBootstrapUrls()[0];
-
         try {
             factory = new SocketStoreClientFactory(clientConfig);
             client = factory.getStoreClient(storeName);
-            adminClient = new AdminClient(bootstrapUrl, new AdminClientConfig(), clientConfig);
+            adminClient = new AdminClient(clientConfig);
 
             storeDef = StoreUtils.getStoreDef(factory.getStoreDefs(), storeName);
 
-            commandOutput.println("Established connection to " + storeName + " via " + bootstrapUrl);
+	    Cluster cluster = adminClient.getAdminClientCluster();
+	    routingStrategy = new RoutingStrategyFactory().updateRoutingStrategy(storeDef, cluster);
+
+            commandOutput.println("Established connection to " + storeName + " via "
+                                  + Arrays.toString(clientConfig.getBootstrapUrls()));
             commandOutput.print(PROMPT);
         } catch(Exception e) {
             safeClose();
@@ -267,6 +275,13 @@ public class VoldemortClientShell {
         return parseObject(storeDef.getValueSerializer(), argStr, parsePos, this.errorStream);
     }
 
+    protected byte[] serializeKey(Object key) {
+	SerializerFactory serializerFactory = factory.getSerializerFactory();
+	SerializerDefinition serializerDef = storeDef.getKeySerializer();
+	Serializer<Object> keySerializer = (Serializer<Object>) serializerFactory.getSerializer(serializerDef);
+	return keySerializer.toBytes(key);
+    }
+
     protected void processPut(String putArgStr) {
         MutableInt parsePos = new MutableInt(0);
         Object key = parseKey(putArgStr, parsePos);
@@ -309,6 +324,14 @@ public class VoldemortClientShell {
         MutableInt parsePos = new MutableInt(0);
         Object key = parseKey(getArgStr, parsePos);
         printVersioned(client.get(key));
+    }
+
+    protected void processPreflist(String preflistArgStr) {
+	MutableInt parsePos = new MutableInt(0);
+	Object key = parseKey(preflistArgStr, parsePos);
+	byte[] serializedKey = serializeKey(key);
+	printPartitionList(routingStrategy.getPartitionList(serializedKey));
+	printNodeList(routingStrategy.routeRequest(serializedKey), factory.getFailureDetector());
     }
 
     protected void processDelete(String deleteArgStr) {
@@ -358,9 +381,7 @@ public class VoldemortClientShell {
             } else if(line.toLowerCase().startsWith("delete")) {
                 processDelete(line.substring("delete".length()));
             } else if(line.startsWith("preflist")) {
-                JsonReader jsonReader = new JsonReader(new StringReader(line.substring("preflist".length())));
-                Object key = tightenNumericTypes(jsonReader.read());
-                printNodeList(client.getResponsibleNodes(key), factory.getFailureDetector());
+		processPreflist(line.substring("preflist".length()));
             } else if(line.toLowerCase().startsWith("fetchkeys")) {
                 String[] args = line.substring("fetchkeys".length() + 1).split("\\s+");
                 int remoteNodeId = Integer.valueOf(args[0]);
@@ -512,6 +533,13 @@ public class VoldemortClientShell {
                 commandOutput.println();
             }
         }
+    }
+
+    private void printPartitionList(List<Integer> partitions) {
+	commandOutput.println("Partitions:");
+	for (Integer partition: partitions) {
+	    commandOutput.println("    " + partition.toString());
+	}
     }
 
     protected void printVersioned(Versioned<Object> v) {

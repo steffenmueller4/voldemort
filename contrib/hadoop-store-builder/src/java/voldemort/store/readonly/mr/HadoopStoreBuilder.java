@@ -21,13 +21,14 @@ import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.List;
 
+import com.google.common.collect.Lists;
 import org.apache.avro.Schema;
 import org.apache.avro.mapred.AvroJob;
 import org.apache.avro.mapred.AvroOutputFormat;
 import org.apache.avro.mapred.Pair;
 import org.apache.commons.codec.binary.Hex;
-import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.fs.FileStatus;
@@ -52,13 +53,17 @@ import voldemort.VoldemortException;
 import voldemort.cluster.Cluster;
 import voldemort.cluster.Node;
 import voldemort.store.StoreDefinition;
-import voldemort.store.readonly.ReadOnlyStorageFormat;
 import voldemort.store.readonly.ReadOnlyStorageMetadata;
+import voldemort.store.readonly.ReadOnlyStorageFormat;
+import voldemort.store.readonly.ReadOnlyUtils;
 import voldemort.store.readonly.checksum.CheckSum;
 import voldemort.store.readonly.checksum.CheckSum.CheckSumType;
 import voldemort.store.readonly.checksum.CheckSumMetadata;
 import voldemort.store.readonly.disk.KeyValueWriter;
+import voldemort.store.readonly.mr.azkaban.AbstractHadoopJob;
+import voldemort.store.readonly.mr.azkaban.VoldemortBuildAndPushJob;
 import voldemort.utils.ByteUtils;
+import voldemort.utils.Props;
 import voldemort.utils.Utils;
 import voldemort.xml.ClusterMapper;
 import voldemort.xml.StoreDefinitionsMapper;
@@ -68,7 +73,7 @@ import voldemort.xml.StoreDefinitionsMapper;
  * 
  */
 @SuppressWarnings("deprecation")
-public class HadoopStoreBuilder {
+public class HadoopStoreBuilder extends AbstractHadoopJob {
 
     public static final long MIN_CHUNK_SIZE = 1L;
     public static final long MAX_CHUNK_SIZE = (long) (1.9 * 1024 * 1024 * 1024);
@@ -77,7 +82,7 @@ public class HadoopStoreBuilder {
 
     private static final Logger logger = Logger.getLogger(HadoopStoreBuilder.class);
 
-    private final Configuration config;
+    private final JobConf baseJobConf;
     private final Class mapperClass;
     @SuppressWarnings("unchecked")
     private final Class<? extends InputFormat> inputFormatClass;
@@ -87,38 +92,46 @@ public class HadoopStoreBuilder {
     private final Path inputPath;
     private final Path outputDir;
     private final Path tempDir;
-    private CheckSumType checkSumType = CheckSumType.NONE;
-    private boolean saveKeys = false;
-    private boolean reducerPerBucket = false;
-    private int numChunks = -1;
-    private boolean isAvro;
-    private Long minNumberOfRecords;
+    private final CheckSumType checkSumType;
+    private final boolean saveKeys;
+    private final boolean reducerPerBucket;
+    private int numChunksOverride;
+    private final boolean isAvro;
+    private final Long minNumberOfRecords;
+    private final boolean buildPrimaryReplicasOnly;
 
     /**
      * Create the store builder
      *
-     * @param conf A base configuration to start with
+     * @param name Name of the job
+     * @param props The Build and Push job's {@link Props}
+     * @param baseJobConf A base configuration to start with
      * @param mapperClass The class to use as the mapper
      * @param inputFormatClass The input format to use for reading values
      * @param cluster The voldemort cluster for which the stores are being built
      * @param storeDef The store definition of the store
      * @param tempDir The temporary directory to use in hadoop for intermediate
-*        reducer output
+     *        reducer output
      * @param outputDir The directory in which to place the built stores
      * @param inputPath The path from which to read input data
      * @param checkSumType The checksum algorithm to use
      * @param saveKeys Boolean to signify if we want to save the key as well
      * @param reducerPerBucket Boolean to signify whether we want to have a
-*        single reducer for a bucket ( thereby resulting in all chunk files
-*        for a bucket being generated in a single reducer )
-     * @param chunkSizeBytes Size of each chunks (ignored if numChunks is > 0)
-     * @param numChunks Number of chunks per bucket ( partition or partition
-*        replica )
+     *        single reducer for a bucket ( thereby resulting in all chunk files
+     *        for a bucket being generated in a single reducer )
+     * @param chunkSizeBytes Size of each chunks (ignored if numChunksOverride is > 0)
+     * @param numChunksOverride Number of chunks per bucket ( partition or partition
+     *        replica )
      * @param isAvro whether the data format is avro
-     * @param minNumberOfRecords
-     *
+     * @param minNumberOfRecords if job generates fewer records than this, fail.
+     * @param buildPrimaryReplicasOnly if true: build each partition only once,
+     *                                 and store the files grouped by partition.
+     *                                 if false: build all replicas redundantly,
+     *                                 and store the files grouped by node.
      */
-    public HadoopStoreBuilder(Configuration conf,
+    public HadoopStoreBuilder(String name,
+                              Props props,
+                              JobConf baseJobConf,
                               Class mapperClass,
                               Class<? extends InputFormat> inputFormatClass,
                               Cluster cluster,
@@ -130,10 +143,12 @@ public class HadoopStoreBuilder {
                               boolean saveKeys,
                               boolean reducerPerBucket,
                               long chunkSizeBytes,
-                              int numChunks,
+                              int numChunksOverride,
                               boolean isAvro,
-                              Long minNumberOfRecords) {
-        this.config = conf;
+                              Long minNumberOfRecords,
+                              boolean buildPrimaryReplicasOnly) {
+        super(name, props);
+        this.baseJobConf = baseJobConf;
         this.mapperClass = Utils.notNull(mapperClass);
         this.inputFormatClass = Utils.notNull(inputFormatClass);
         this.inputPath = inputPath;
@@ -145,18 +160,19 @@ public class HadoopStoreBuilder {
         this.saveKeys = saveKeys;
         this.reducerPerBucket = reducerPerBucket;
         this.chunkSizeBytes = chunkSizeBytes;
-        this.numChunks = numChunks;
+        this.numChunksOverride = numChunksOverride;
         this.isAvro = isAvro;
         this.minNumberOfRecords = minNumberOfRecords == null ? 1 : minNumberOfRecords;
+        this.buildPrimaryReplicasOnly = buildPrimaryReplicasOnly;
 
-        if(numChunks <= 0) {
-            logger.info("HadoopStoreBuilder constructed with numChunks <= 0, thus relying chunk size.");
+        if(numChunksOverride <= 0) {
+            logger.info("HadoopStoreBuilder constructed with numChunksOverride <= 0, thus relying chunk size.");
             if(chunkSizeBytes > MAX_CHUNK_SIZE || chunkSizeBytes < MIN_CHUNK_SIZE) {
                 throw new VoldemortException("Invalid chunk size, chunk size must be in the range "
                         + MIN_CHUNK_SIZE + "..." + MAX_CHUNK_SIZE);
             }
         } else {
-            logger.info("HadoopStoreBuilder constructed with numChunks > 0, thus ignoring chunk size.");
+            logger.info("HadoopStoreBuilder constructed with numChunksOverride > 0, thus ignoring chunk size.");
         }
     }
 
@@ -166,23 +182,27 @@ public class HadoopStoreBuilder {
      */
     public void build() {
         try {
-            JobConf conf = new JobConf(config);
+            JobConf conf = prepareJobConf(baseJobConf);
+
+            FileSystem fs = outputDir.getFileSystem(conf);
+            if(fs.exists(outputDir)) {
+                info("Deleting previous output in " + outputDir + " for building store " + this.storeDef.getName());
+                fs.delete(outputDir, true);
+            }
+
             conf.setInt("io.file.buffer.size", DEFAULT_BUFFER_SIZE);
             conf.set("cluster.xml", new ClusterMapper().writeCluster(cluster));
             conf.set("stores.xml",
                      new StoreDefinitionsMapper().writeStoreList(Collections.singletonList(storeDef)));
-            conf.setBoolean("save.keys", saveKeys);
-            conf.setBoolean("reducer.per.bucket", reducerPerBucket);
+            conf.setBoolean(VoldemortBuildAndPushJob.SAVE_KEYS, saveKeys);
+            conf.setBoolean(VoldemortBuildAndPushJob.REDUCER_PER_BUCKET, reducerPerBucket);
+            conf.setBoolean(VoldemortBuildAndPushJob.BUILD_PRIMARY_REPLICAS_ONLY, buildPrimaryReplicasOnly);
             if(!isAvro) {
                 conf.setPartitionerClass(HadoopStoreBuilderPartitioner.class);
                 conf.setMapperClass(mapperClass);
                 conf.setMapOutputKeyClass(BytesWritable.class);
                 conf.setMapOutputValueClass(BytesWritable.class);
-                if(reducerPerBucket) {
-                    conf.setReducerClass(HadoopStoreBuilderReducerPerBucket.class);
-                } else {
-                    conf.setReducerClass(HadoopStoreBuilderReducer.class);
-                }
+                conf.setReducerClass(HadoopStoreBuilderReducer.class);
             }
             conf.setInputFormat(inputFormatClass);
             conf.setOutputFormat(SequenceFileOutputFormat.class);
@@ -192,7 +212,7 @@ public class HadoopStoreBuilder {
             conf.setReduceSpeculativeExecution(false);
             FileInputFormat.setInputPaths(conf, inputPath);
             conf.set("final.output.dir", outputDir.toString());
-            conf.set("checksum.type", CheckSum.toString(checkSumType));
+            conf.set(VoldemortBuildAndPushJob.CHECKSUM_TYPE, CheckSum.toString(checkSumType));
             conf.set("dfs.umaskmode", "002");
             FileOutputFormat.setOutputPath(conf, tempDir);
 
@@ -206,49 +226,54 @@ public class HadoopStoreBuilder {
             tempFs.delete(tempDir, true);
 
             long size = sizeOfPath(tempFs, inputPath);
-            logger.info("Data size = " + size + ", replication factor = "
-                        + storeDef.getReplicationFactor() + ", numNodes = "
-                        + cluster.getNumberOfNodes() + ", numPartitions = "
-                        + cluster.getNumberOfPartitions() + ", chunk size = " + chunkSizeBytes);
+            logger.info("Data size = " + size +
+                        ", replication factor = " + storeDef.getReplicationFactor() +
+                        ", numNodes = " + cluster.getNumberOfNodes() +
+                        ", numPartitions = " + cluster.getNumberOfPartitions() +
+                        ", chunk size = " + chunkSizeBytes);
 
-            // Derive "rough" number of chunks and reducers
-            int numReducers;
-            if(saveKeys) {
+            // Dynamically calculate number of chunks and reducers
 
-                if(this.numChunks == -1) {
-                    this.numChunks = Math.max((int) (storeDef.getReplicationFactor() * size
-                                                     / cluster.getNumberOfPartitions()
-                                                     / storeDef.getReplicationFactor() / chunkSizeBytes),
-                                              1);
+            // Base numbers of chunks and reducers, will get modified according to various settings
+            int numChunks = (int) (size / cluster.getNumberOfPartitions() / chunkSizeBytes);
+            int numReducers = cluster.getNumberOfPartitions();
+
+            // In Save Keys mode, which was introduced with the READ_ONLY_V2 file format, the replicas
+            // are shuffled via additional reducers, whereas originally they were shuffled via
+            // additional chunks. Whether this distinction actually makes sense or not is an interesting
+            // question, but in order to avoid breaking anything we'll just maintain the original behavior.
+            if (saveKeys) {
+                if (buildPrimaryReplicasOnly) {
+                    // The buildPrimaryReplicasOnly mode is supported exclusively in combination with
+                    // saveKeys. If enabled, then we don't want to shuffle extra keys redundantly,
+                    // hence we don't change the number of reducers.
                 } else {
-                    logger.info("Overriding chunk size byte and taking num chunks ("
-                                + this.numChunks + ") directly");
-                }
-
-                if(reducerPerBucket) {
-                    numReducers = cluster.getNumberOfPartitions() * storeDef.getReplicationFactor();
-                } else {
-                    numReducers = cluster.getNumberOfPartitions() * storeDef.getReplicationFactor()
-                                  * numChunks;
+                    // Old behavior, where all keys are redundantly shuffled to redundant reducers.
+                    numReducers = numReducers * storeDef.getReplicationFactor();
                 }
             } else {
-
-                if(this.numChunks == -1) {
-                    this.numChunks = Math.max((int) (storeDef.getReplicationFactor() * size
-                                                     / cluster.getNumberOfPartitions() / chunkSizeBytes),
-                                              1);
-                } else {
-                    logger.info("Overriding chunk size byte and taking num chunks ("
-                                + this.numChunks + ") directly");
-                }
-
-                if(reducerPerBucket) {
-                    numReducers = cluster.getNumberOfPartitions();
-                } else {
-                    numReducers = cluster.getNumberOfPartitions() * numChunks;
-                }
+                numChunks = numChunks * storeDef.getReplicationFactor();
             }
-            conf.setInt("num.chunks", numChunks);
+
+            // Ensure at least one chunk
+            numChunks = Math.max(numChunks, 1);
+
+            if (reducerPerBucket) {
+                // Then all chunks for a given partition/replica combination are shuffled to the same
+                // reducer, hence, the number of reducers remains the same as previously defined.
+            } else {
+                // Otherwise, we want one reducer per chunk, hence we multiply the number of reducers.
+                numReducers = numReducers * numChunks;
+            }
+
+            if (this.numChunksOverride > 0) {
+                logger.info("The " + VoldemortBuildAndPushJob.NUM_CHUNKS + " setting is overridden " +
+                            "by config, so we'll use the override (" + this.numChunksOverride + ") " +
+                            "and discard the dynamically computed value (" + numChunks + ").");
+                numChunks = this.numChunksOverride;
+            }
+
+            conf.setInt(VoldemortBuildAndPushJob.NUM_CHUNKS, numChunks);
             conf.setNumReduceTasks(numReducers);
 
             if(isAvro) {
@@ -264,24 +289,19 @@ public class HadoopStoreBuilder {
                 conf.setOutputValueClass(ByteBuffer.class);
 
                 // AvroJob confs for the avro mapper
-                AvroJob.setInputSchema(conf, Schema.parse(config.get("avro.rec.schema")));
+                AvroJob.setInputSchema(conf, Schema.parse(baseJobConf.get("avro.rec.schema")));
 
                 AvroJob.setOutputSchema(conf,
                                         Pair.getPairSchema(Schema.create(Schema.Type.BYTES),
                                                            Schema.create(Schema.Type.BYTES)));
 
                 AvroJob.setMapperClass(conf, mapperClass);
-
-                if(reducerPerBucket) {
-                    conf.setReducerClass(AvroStoreBuilderReducerPerBucket.class);
-                } else {
-                    conf.setReducerClass(AvroStoreBuilderReducer.class);
-                }
-
+                conf.setReducerClass(AvroStoreBuilderReducer.class);
             }
 
             logger.info("Number of chunks: " + numChunks + ", number of reducers: " + numReducers
-                        + ", save keys: " + saveKeys + ", reducerPerBucket: " + reducerPerBucket);
+                        + ", save keys: " + saveKeys + ", reducerPerBucket: " + reducerPerBucket
+                        + ", buildPrimaryReplicasOnly: " + buildPrimaryReplicasOnly);
             logger.info("Building store...");
             RunningJob job = JobClient.runJob(conf);
 
@@ -309,8 +329,23 @@ public class HadoopStoreBuilder {
                                              + this.checkSumType);
             }
 
+            List<String> directories = Lists.newArrayList();
+            if (buildPrimaryReplicasOnly) {
+                // Files are grouped by partitions
+                for(int partitionId = 0; partitionId < cluster.getNumberOfPartitions(); partitionId++) {
+                    directories.add(ReadOnlyUtils.PARTITION_DIRECTORY_PREFIX + partitionId);
+                }
+            } else {
+                // Files are grouped by node
+                for(Node node: cluster.getNodes()) {
+                    directories.add(ReadOnlyUtils.NODE_DIRECTORY_PREFIX + node.getId());
+                }
+            }
+
+            ReadOnlyStorageMetadata fullStoreMetadata = new ReadOnlyStorageMetadata();
+
             // Check if all folder exists and with format file
-            for(Node node: cluster.getNodes()) {
+            for(String directoryName: directories) {
 
                 ReadOnlyStorageMetadata metadata = new ReadOnlyStorageMetadata();
 
@@ -322,34 +357,58 @@ public class HadoopStoreBuilder {
                                  ReadOnlyStorageFormat.READONLY_V1.getCode());
                 }
 
-                Path nodePath = new Path(outputDir.toString(), "node-" + node.getId());
+                Path directoryPath = new Path(outputDir.toString(), directoryName);
 
-                if(!outputFs.exists(nodePath)) {
-                    logger.info("No data generated for node " + node.getId()
-                                + ". Generating empty folder");
-                    outputFs.mkdirs(nodePath); // Create empty folder
-                    outputFs.setPermission(nodePath, new FsPermission(HADOOP_FILE_PERMISSION));
-                    logger.info("Setting permission to 755 for " + nodePath);
+                if(!outputFs.exists(directoryPath)) {
+                    logger.info("No data generated for " + directoryName
+                                        + ". Generating empty folder");
+                    outputFs.mkdirs(directoryPath); // Create empty folder
+                    outputFs.setPermission(directoryPath, new FsPermission(HADOOP_FILE_PERMISSION));
+                    logger.info("Setting permission to 755 for " + directoryPath);
                 }
 
-                processCheckSumMetadataFile(node, outputFs, checkSumGenerator, nodePath, metadata);
+                processCheckSumMetadataFile(directoryName, outputFs, checkSumGenerator, directoryPath, metadata);
 
-                // Write metadata
-                Path metadataPath = new Path(nodePath, ".metadata");
-                FSDataOutputStream metadataStream = outputFs.create(metadataPath);
-                outputFs.setPermission(metadataPath, new FsPermission(HADOOP_FILE_PERMISSION));
-                logger.info("Setting permission to 755 for " + metadataPath);
-                metadataStream.write(metadata.toJsonString().getBytes());
-                metadataStream.flush();
-                metadataStream.close();
+                if (buildPrimaryReplicasOnly) {
+                    // In buildPrimaryReplicasOnly mode, writing a metadata file for each partitions
+                    // takes too long, so we skip it. We will rely on the full-store.metadata file instead.
+                } else {
+                    // Maintaining the old behavior: we write the node-specific metadata file
+                    writeMetadataFile(directoryPath, outputFs, ReadOnlyUtils.METADATA_FILE_EXTENSION, metadata);
+                }
 
+                fullStoreMetadata.addNestedMetadata(directoryName, metadata);
             }
+
+            // Write the aggregate metadata file
+            writeMetadataFile(outputDir, outputFs, ReadOnlyUtils.FULL_STORE_METADATA_FILE, fullStoreMetadata);
 
         } catch(Exception e) {
             logger.error("Error in Store builder", e);
             throw new VoldemortException(e);
         }
+    }
 
+    /**
+     * Persists a *.metadata file to a specific directory in HDFS.
+     *
+     * @param directoryPath where to write the metadata file.
+     * @param outputFs {@link org.apache.hadoop.fs.FileSystem} where to write the file
+     * @param metadataFileName name of the file (including extension)
+     * @param metadata {@link voldemort.store.readonly.ReadOnlyStorageMetadata} to persist on HDFS
+     * @throws IOException if the FileSystem operations fail
+     */
+    private void writeMetadataFile(Path directoryPath,
+                                   FileSystem outputFs,
+                                   String metadataFileName,
+                                   ReadOnlyStorageMetadata metadata) throws IOException {
+        Path metadataPath = new Path(directoryPath, metadataFileName);
+        FSDataOutputStream metadataStream = outputFs.create(metadataPath);
+        outputFs.setPermission(metadataPath, new FsPermission(HADOOP_FILE_PERMISSION));
+        logger.info("Setting permission to 755 for " + metadataPath);
+        metadataStream.write(metadata.toJsonString().getBytes());
+        metadataStream.flush();
+        metadataStream.close();
     }
 
     /**
@@ -363,18 +422,18 @@ public class HadoopStoreBuilder {
      * 
      * Finally updates the metadata file with those information
      * 
-     * @param node
+     * @param directoryName
      * @param outputFs
      * @param checkSumGenerator
      * @param nodePath
      * @param metadata
      * @throws IOException
      */
-    private void processCheckSumMetadataFile(Node node,
-                                            FileSystem outputFs,
-                                            CheckSum checkSumGenerator,
-                                            Path nodePath,
-                                            ReadOnlyStorageMetadata metadata) throws IOException {
+    private void processCheckSumMetadataFile(String directoryName,
+                                             FileSystem outputFs,
+                                             CheckSum checkSumGenerator,
+                                             Path nodePath,
+                                             ReadOnlyStorageMetadata metadata) throws IOException {
 
         long dataSizeInBytes = 0L;
         long indexSizeInBytes = 0L;
@@ -398,10 +457,8 @@ public class HadoopStoreBuilder {
             for(FileStatus file: storeFiles) {
                 try {
                     // HDFS NameNodes can sometimes GC for extended periods
-                    // of time,
-                    // hence the exponential back-off strategy below.
-                    // TODO: Refactor all BnP/Voldemort retry code into a
-                    // pluggable/configurable mechanism
+                    // of time, hence the exponential back-off strategy below.
+                    // TODO: Refactor all BnP retry code into a pluggable mechanism
 
                     int totalAttempts = 4;
                     int attemptsRemaining = totalAttempts;
@@ -414,8 +471,7 @@ public class HadoopStoreBuilder {
                                 throw e;
                             }
 
-                            // Exponential back-off sleep times: 5s, 25s,
-                            // 45s.
+                            // Exponential back-off sleep times: 5s, 25s, 45s.
                             int sleepTime = ((totalAttempts - attemptsRemaining) ^ 2) * 5;
                             logger.error("Error getting checksum file from HDFS. Retries left: "
                                          + attemptsRemaining + ". Back-off until next retry: "
@@ -458,20 +514,19 @@ public class HadoopStoreBuilder {
             }
 
             // update metadata
-            long diskSizeForNodeInBytes = dataSizeInBytes + indexSizeInBytes;
-            logger.info("Estimated disk size for store " + this.storeDef.getName() + " in node "
-                        + node.briefToString() + " in KB: "
-                        + (diskSizeForNodeInBytes / ByteUtils.BYTES_PER_KB));
-            metadata.add(ReadOnlyStorageMetadata.DISK_SIZE_IN_BYTES,
-                         Long.toString(diskSizeForNodeInBytes));
+
+            String checkSum = "NONE";
             if(checkSumType != CheckSumType.NONE) {
                 metadata.add(ReadOnlyStorageMetadata.CHECKSUM_TYPE, CheckSum.toString(checkSumType));
-
-                String checkSum = new String(Hex.encodeHex(checkSumGenerator.getCheckSum()));
-                logger.info("Checksum for node " + node.getId() + " - " + checkSum);
-
+                checkSum = new String(Hex.encodeHex(checkSumGenerator.getCheckSum()));
                 metadata.add(ReadOnlyStorageMetadata.CHECKSUM, checkSum);
             }
+
+            long diskSizeForNodeInBytes = dataSizeInBytes + indexSizeInBytes;
+            logger.info(directoryName + ": Checksum = " + checkSum +
+                        ", Size = " + (diskSizeForNodeInBytes / ByteUtils.BYTES_PER_KB) + " KB");
+            metadata.add(ReadOnlyStorageMetadata.DISK_SIZE_IN_BYTES,
+                         Long.toString(diskSizeForNodeInBytes));
         }
 
     }

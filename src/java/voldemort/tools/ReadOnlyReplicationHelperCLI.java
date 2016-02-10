@@ -29,16 +29,13 @@ import joptsimple.OptionSet;
 
 import org.apache.log4j.Logger;
 
-import voldemort.client.ClientConfig;
 import voldemort.client.protocol.admin.AdminClient;
-import voldemort.client.protocol.admin.AdminClientConfig;
 import voldemort.cluster.Cluster;
 import voldemort.cluster.Node;
 import voldemort.routing.RoutingStrategy;
 import voldemort.routing.RoutingStrategyFactory;
 import voldemort.store.StoreDefinition;
 import voldemort.store.readonly.ReadOnlyStorageConfiguration;
-import voldemort.store.readonly.ReadOnlyStorageFormat;
 import voldemort.utils.CmdUtils;
 import voldemort.utils.Utils;
 
@@ -163,20 +160,22 @@ public class ReadOnlyReplicationHelperCLI {
     }
 
     /**
-     * Analyze read-only storage file replication info
-     * 
+     * Analyze read-only storage file replication info, for replicating
+     * the partitions on the given nodeId.  Note that because that node
+     * is being replicated, we cannot rely on the node being up or
+     * consistent, so we carefully avoid talking to it.
+     *
      * @param cluster
      * @param nodeId
-     * @return List of read-only replicaiton info in format of:
+     * @return List of read-only replication info in format of:
      *         store_name,src_node_id,src_file_name,dest_file_name
      */
     public static List<String> getReadOnlyReplicationInfo(AdminClient adminClient,
                                                           Integer nodeId,
                                                           Boolean local) {
         List<String> infoList = Lists.newArrayList();
-        List<StoreDefinition> storeDefs = adminClient.metadataMgmtOps.getRemoteStoreDefList()
-                                                                     .getValue();
-        Cluster cluster = adminClient.metadataMgmtOps.getRemoteCluster(nodeId).getValue();
+        Cluster cluster = adminClient.getAdminClientCluster();
+        List<StoreDefinition> storeDefs = adminClient.rebalanceOps.getCurrentStoreDefinitionsExcept(cluster, nodeId);
 
         for(StoreDefinition storeDef: storeDefs) {
             String storeName = storeDef.getName();
@@ -196,15 +195,6 @@ public class ReadOnlyReplicationHelperCLI {
 			     ReadOnlyStorageConfiguration.TYPE_NAME);
                 continue;
 	    }
-	    storageFormat = adminClient.readonlyOps.getROStorageFormat(nodeId, storeName);
-	    if(!storageFormat.equals(ReadOnlyStorageFormat.READONLY_V2.getCode())) {
-                logger.error("Store " + storeName +
-			     " cannot be restored, as it has storage format = " +
-                             storageFormat +
-			     " instead of " +
-			     ReadOnlyStorageFormat.READONLY_V2.getCode());
-                continue;
-            }
 
             logger.info("Processing store " + storeName);
 
@@ -306,7 +296,7 @@ public class ReadOnlyReplicationHelperCLI {
         }
         Boolean local = options.has(OPT_LOCAL);
 
-        AdminClient adminClient = new AdminClient(url, new AdminClientConfig(), new ClientConfig());
+        AdminClient adminClient = new AdminClient(url);
 
         outputStream.println("src_host_name,src_node_id,src_rel_path,dest_rel_path");
 

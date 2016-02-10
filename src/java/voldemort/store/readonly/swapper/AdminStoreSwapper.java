@@ -1,25 +1,5 @@
 package voldemort.store.readonly.swapper;
 
-import com.google.common.base.Joiner;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Maps;
-import joptsimple.OptionParser;
-import joptsimple.OptionSet;
-import org.apache.commons.io.FileUtils;
-import org.apache.log4j.Logger;
-import voldemort.VoldemortException;
-import voldemort.client.ClientConfig;
-import voldemort.client.protocol.admin.AdminClient;
-import voldemort.client.protocol.admin.AdminClientConfig;
-import voldemort.cluster.Cluster;
-import voldemort.cluster.Node;
-import voldemort.store.quota.QuotaExceededException;
-import voldemort.store.readonly.ReadOnlyUtils;
-import voldemort.utils.CmdUtils;
-import voldemort.utils.Time;
-import voldemort.utils.logging.PrefixedLogger;
-import voldemort.xml.ClusterMapper;
-
 import java.io.File;
 import java.io.StringReader;
 import java.util.ArrayList;
@@ -35,6 +15,27 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
+import joptsimple.OptionParser;
+import joptsimple.OptionSet;
+
+import org.apache.commons.io.FileUtils;
+import org.apache.log4j.Logger;
+
+import voldemort.VoldemortException;
+import voldemort.client.protocol.admin.AdminClient;
+import voldemort.cluster.Cluster;
+import voldemort.cluster.Node;
+import voldemort.store.quota.QuotaExceededException;
+import voldemort.store.readonly.ReadOnlyUtils;
+import voldemort.utils.CmdUtils;
+import voldemort.utils.Time;
+import voldemort.utils.logging.PrefixedLogger;
+import voldemort.xml.ClusterMapper;
+
+import com.google.common.base.Joiner;
+import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.Maps;
+
 public class AdminStoreSwapper {
 
     private final Logger logger;
@@ -43,6 +44,7 @@ public class AdminStoreSwapper {
     private long timeoutMs;
     private boolean rollbackFailedSwap = false;
     private final List<FailedFetchStrategy> failedFetchStrategyList;
+    private final boolean buildPrimaryReplicasOnly;
 
     protected final Cluster cluster;
     protected final ExecutorService executor;
@@ -56,6 +58,7 @@ public class AdminStoreSwapper {
      * @param rollbackFailedSwap Boolean to indicate we want to rollback the
      * @param failedFetchStrategyList list of {@link FailedFetchStrategy} to execute in case of failure
      * @param clusterName String added as a prefix to all logs. If null, there is no prefix on the logs.
+     * @param buildPrimaryReplicasOnly if true, fetch is per partition, if false (old behavior) then fetch is per node
      */
     public AdminStoreSwapper(Cluster cluster,
                              ExecutorService executor,
@@ -63,7 +66,8 @@ public class AdminStoreSwapper {
                              long timeoutMs,
                              boolean rollbackFailedSwap,
                              List<FailedFetchStrategy> failedFetchStrategyList,
-                             String clusterName) {
+                             String clusterName,
+                             boolean buildPrimaryReplicasOnly) {
         this.cluster = cluster;
         this.executor = executor;
         this.adminClient = adminClient;
@@ -75,6 +79,7 @@ public class AdminStoreSwapper {
         } else {
             this.logger = PrefixedLogger.getLogger(AdminStoreSwapper.class.getName(), clusterName);
         }
+        this.buildPrimaryReplicasOnly = buildPrimaryReplicasOnly;
     }
 
 
@@ -95,7 +100,7 @@ public class AdminStoreSwapper {
                              long timeoutMs,
                              boolean deleteFailedFetch,
                              boolean rollbackFailedSwap) {
-        this(cluster, executor, adminClient, timeoutMs, rollbackFailedSwap, new ArrayList<FailedFetchStrategy>(), null);
+        this(cluster, executor, adminClient, timeoutMs, rollbackFailedSwap, new ArrayList<FailedFetchStrategy>(), null, false);
         if (deleteFailedFetch) {
             failedFetchStrategyList.add(new DeleteAllFailedFetchStrategy(adminClient));
         }
@@ -112,7 +117,7 @@ public class AdminStoreSwapper {
                              ExecutorService executor,
                              AdminClient adminClient,
                              long timeoutMs) {
-        this(cluster, executor, adminClient, timeoutMs, false, new ArrayList<FailedFetchStrategy>(), null);
+        this(cluster, executor, adminClient, timeoutMs, false, new ArrayList<FailedFetchStrategy>(), null, false);
     }
 
     public void swapStoreData(String storeName, String basePath, long pushVersion) {
@@ -149,22 +154,35 @@ public class AdminStoreSwapper {
                                     final String basePath,
                                     final long pushVersion) {
         // do fetch
-        Map<Integer, Future<String>> fetchDirs = new HashMap<Integer, Future<String>>();
+        final Map<Integer, Future<String>> fetchDirs = new HashMap<Integer, Future<String>>();
         for(final Node node: cluster.getNodes()) {
             fetchDirs.put(node.getId(), executor.submit(new Callable<String>() {
 
                 public String call() throws Exception {
-                    String storeDir = basePath + "/node-" + node.getId();
-                    logger.info("Invoking fetch for " + node.briefToString() + " for " + storeDir);
-                    String response = adminClient.readonlyOps.fetchStore(node.getId(),
-                                                                         storeName,
-                                                                         storeDir,
-                                                                         pushVersion,
-                                                                         timeoutMs);
+                    String response = null;
+                    if (buildPrimaryReplicasOnly) {
+                        // Then we give the root directory to the server and let it decide what to fetch
+                        response = fetch(basePath);
+                    } else {
+                        // Old behavior: fetch the node directory only
+                        String storeDir = basePath + "/" + ReadOnlyUtils.NODE_DIRECTORY_PREFIX + node.getId();
+                        response = fetch(storeDir);
+                    }
+
                     if(response == null)
                         throw new VoldemortException("Fetch request on " + node.briefToString() + " failed");
                     logger.info("Fetch succeeded on " + node.briefToString());
                     return response.trim();
+                }
+
+                private String fetch(String storeDir) {
+                    // TODO: Catch specific exception if async task status is not found, and retry in that case.
+                    logger.info("Invoking fetch for " + node.briefToString() + " for " + storeDir);
+                    return adminClient.readonlyOps.fetchStore(node.getId(),
+                                                              storeName,
+                                                              storeDir,
+                                                              pushVersion,
+                                                              timeoutMs);
                 }
             }));
         }
@@ -370,7 +388,7 @@ public class AdminStoreSwapper {
         String clusterStr = FileUtils.readFileToString(new File(clusterXml));
         Cluster cluster = new ClusterMapper().readCluster(new StringReader(clusterStr));
         ExecutorService executor = Executors.newFixedThreadPool(cluster.getNumberOfNodes());
-        AdminClient adminClient = new AdminClient(cluster, new AdminClientConfig(), new ClientConfig());
+        AdminClient adminClient = new AdminClient(cluster);
         AdminStoreSwapper swapper = new AdminStoreSwapper(cluster, executor, adminClient, timeoutMs);
 
         try {

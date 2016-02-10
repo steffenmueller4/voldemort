@@ -16,19 +16,6 @@
 
 package voldemort.store.readonly.mr.azkaban;
 
-import azkaban.jobExecutor.AbstractJob;
-import org.apache.hadoop.fs.FileSystem;
-import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.mapred.JobConf;
-import voldemort.VoldemortException;
-import voldemort.client.ClientConfig;
-import voldemort.client.protocol.admin.AdminClient;
-import voldemort.client.protocol.admin.AdminClientConfig;
-import voldemort.cluster.Cluster;
-import voldemort.store.readonly.swapper.AdminStoreSwapper;
-import voldemort.store.readonly.swapper.FailedFetchStrategy;
-import voldemort.utils.logging.PrefixedLogger;
-
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
@@ -36,6 +23,21 @@ import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.mapred.JobConf;
+
+import voldemort.VoldemortException;
+import voldemort.client.ClientConfig;
+import voldemort.client.protocol.admin.AdminClient;
+import voldemort.client.protocol.admin.AdminClientConfig;
+import voldemort.cluster.Cluster;
+import voldemort.store.readonly.mr.utils.VoldemortUtils;
+import voldemort.store.readonly.swapper.AdminStoreSwapper;
+import voldemort.store.readonly.swapper.FailedFetchStrategy;
+import voldemort.utils.logging.PrefixedLogger;
+import azkaban.jobExecutor.AbstractJob;
 
 /*
  * Call voldemort to swap the current store for the specified store
@@ -54,6 +56,7 @@ public class VoldemortSwapJob extends AbstractJob {
     private final List<FailedFetchStrategy> failedFetchStrategyList;
     private final String dataDir;
     private final String clusterName;
+    private final boolean buildPrimaryReplicasOnly;
 
     // The following internal state mutates during run()
     private long pushVersion;
@@ -70,7 +73,8 @@ public class VoldemortSwapJob extends AbstractJob {
                             String hdfsFetcherPort,
                             int maxNodeFailures,
                             List<FailedFetchStrategy> failedFetchStrategyList,
-                            String clusterName) throws IOException {
+                            String clusterName,
+                            boolean buildPrimaryReplicasOnly) throws IOException {
         super(id, PrefixedLogger.getLogger(AdminStoreSwapper.class.getName(), clusterName));
         this.cluster = cluster;
         this.dataDir = dataDir;
@@ -84,6 +88,7 @@ public class VoldemortSwapJob extends AbstractJob {
         this.maxNodeFailures = maxNodeFailures;
         this.failedFetchStrategyList = failedFetchStrategyList;
         this.clusterName = clusterName;
+        this.buildPrimaryReplicasOnly = buildPrimaryReplicasOnly;
     }
 
     public void run() throws Exception {
@@ -97,19 +102,14 @@ public class VoldemortSwapJob extends AbstractJob {
         /*
          * Replace the default protocol and port with the one derived as above
          */
-        String[] pathComponents = modifiedDataDir.split(":");
-        if (pathComponents.length >= 3) {
-            String existingProtocol = pathComponents[0];
-            String existingPort = pathComponents[2].split("/")[0];
-            info("Existing protocol = " + existingProtocol + " and port = " + existingPort);
-            if (hdfsFetcherProtocol.length() > 0 && hdfsFetcherPort.length() > 0) {
-                info("New protocol = " + hdfsFetcherProtocol + " and port = " + hdfsFetcherPort);
-                modifiedDataDir = modifiedDataDir.replaceFirst(existingProtocol, hdfsFetcherProtocol);
-                modifiedDataDir = modifiedDataDir.replaceFirst(existingPort, hdfsFetcherPort);
-            }
-        } else {
-            info("The dataDir will not be modified, since it does not contain the expected " +
-                    "structure of protocol:hostname:port/some_path");
+        try {
+            modifiedDataDir =
+                VoldemortUtils.modifyURL(modifiedDataDir, hdfsFetcherProtocol, Integer.valueOf(hdfsFetcherPort));
+        } catch (NumberFormatException nfe) {
+            info("The dataDir will not be modified, since hdfsFetcherPort is not a valid port number");
+        } catch (IllegalArgumentException e) {
+            info("The dataDir will not be modified, since it does not contain the expected "
+                + "structure of protocol:hostname:port/some_path");
         }
 
         try {
@@ -119,12 +119,15 @@ public class VoldemortSwapJob extends AbstractJob {
                     dataDir, e);
         }
 
+        AdminClientConfig adminConfig = new AdminClientConfig().setMaxConnectionsPerNode(cluster.getNumberOfNodes())
+                                                               .setAdminConnectionTimeoutSec(httpTimeoutMs / 1000)
+                                                               .setMaxBackoffDelayMs(maxBackoffDelayMs);
+
+        ClientConfig clientConfig = new ClientConfig().setBootstrapUrls(cluster.getBootStrapUrls())
+                                                      .setConnectionTimeout(httpTimeoutMs,
+                                                                            TimeUnit.MILLISECONDS);
         // Create admin client
-        AdminClient client = new AdminClient(cluster,
-                                             new AdminClientConfig().setMaxConnectionsPerNode(cluster.getNumberOfNodes())
-                                                                    .setAdminConnectionTimeoutSec(httpTimeoutMs / 1000)
-                                                                    .setMaxBackoffDelayMs(maxBackoffDelayMs),
-                                             new ClientConfig());
+        AdminClient client = new AdminClient(cluster, adminConfig, clientConfig);
 
         if (pushVersion == -1L) {
             // Need to retrieve max version
@@ -149,7 +152,8 @@ public class VoldemortSwapJob extends AbstractJob {
                 httpTimeoutMs,
                 rollbackFailedSwap,
                 failedFetchStrategyList,
-                clusterName);
+                clusterName,
+                buildPrimaryReplicasOnly);
         swapper.swapStoreData(storeName, modifiedDataDir, pushVersion);
         info("Swap complete.");
         executor.shutdownNow();

@@ -22,6 +22,8 @@ import java.util.Map;
 import voldemort.VoldemortApplicationException;
 import voldemort.VoldemortException;
 import voldemort.VoldemortUnsupportedOperationalException;
+import voldemort.server.protocol.admin.AsyncOperationStoppedException;
+import voldemort.server.protocol.admin.ReadOnlyFetchDisabledException;
 import voldemort.server.rebalance.AlreadyRebalancingException;
 import voldemort.server.rebalance.VoldemortRebalancingException;
 import voldemort.store.quota.QuotaExceededException;
@@ -64,6 +66,8 @@ public class ErrorCodeMapper {
         codeToException.put((short) 17, QuotaExceededException.class);
         codeToException.put((short) 18, SlopStreamingDisabledException.class);
         codeToException.put((short) 19, InvalidBootstrapURLException.class);
+        codeToException.put((short) 20, AsyncOperationStoppedException.class);
+        codeToException.put((short) 21, ReadOnlyFetchDisabledException.class);
 
         exceptionToCode = new HashMap<Class<? extends VoldemortException>, Short>();
         for(Map.Entry<Short, Class<? extends VoldemortException>> entry: codeToException.entrySet())
@@ -73,7 +77,8 @@ public class ErrorCodeMapper {
     public VoldemortException getError(short code, String message) {
         Class<? extends VoldemortException> klass = codeToException.get(code);
         if(klass == null)
-            return new UnknownFailure(Integer.toString(code));
+            return new UnknownFailure(message + ". Unrecognized error code: "
+                                      + Integer.toString(code));
         else
             return ReflectUtils.callConstructor(klass, new Object[] { message });
     }

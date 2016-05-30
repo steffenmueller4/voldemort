@@ -44,11 +44,15 @@ import voldemort.xml.StoreDefinitionsMapper;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.TreeMap;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
@@ -101,6 +105,7 @@ public class StoreSwapperTest {
         servers = new VoldemortServer[NUM_NODES];
         Properties props = new Properties();
         props.put("readonly.backups", "1");
+        props.put("file.fetcher.class", MockFetcher.class.getName());
         cluster = ServerTestUtils.startVoldemortCluster(NUM_NODES,
                                                         servers,
                                                         null,
@@ -195,6 +200,68 @@ public class StoreSwapperTest {
         }
     }
 
+    @Test
+    public void testConcurrencyPush() throws ExecutionException, InterruptedException {
+        //Set to let the fetcher sleep for a while so it's gonna block the rest of push requests.
+        MockFetcher.setSleepTime(5);
+
+        int pushNums = 4;
+        final ExecutorService executor = Executors.newCachedThreadPool();
+        File tempDir = createTempROFolder();
+
+        List<Future<RuntimeException>> results = Lists.newArrayList();
+
+        for (int i = 0; i < pushNums; i ++) {
+            results.add(executor.submit(new PushWorker(executor, tempDir)));
+        }
+
+        int fetchedNode = 0;
+        for (Future<RuntimeException> e : results){
+            if (e.get() == null)
+                fetchedNode ++;
+            else {
+                assertTrue(e.get() instanceof VoldemortException);
+            }
+
+        }
+
+        assertTrue(fetchedNode <= 1);
+
+        MockFetcher.setSleepTime(0);
+    }
+
+    private class PushWorker implements Callable<RuntimeException> {
+
+        private ExecutorService executor;
+        private File tempDir;
+
+        public PushWorker(ExecutorService executor, File tempDir){
+            this.executor = executor;
+            this.tempDir = tempDir;
+        }
+
+        @Override
+        public RuntimeException call(){
+            AdminStoreSwapper swapper = new AdminStoreSwapper(cluster,
+                    executor,adminClient, 1000000, false, false);
+
+            long currentVersion = adminClient.readonlyOps.getROCurrentVersion(0,
+                    Lists.newArrayList(STORE_NAME))
+                    .get(STORE_NAME);
+
+
+
+            RuntimeException result = null;
+            try {
+                swapper.fetchAndSwapStoreData(STORE_NAME, tempDir.getAbsolutePath(), currentVersion + 1);
+            }catch (RuntimeException e){
+                result = e;
+            }
+
+            return result;
+        }
+    }
+
     public File createTempROFolder() {
         File tempFolder = TestUtils.createTempDir();
         for(int i = 0; i < NUM_NODES; i++) {
@@ -221,7 +288,7 @@ public class StoreSwapperTest {
                      + " is not equal to others");
         }
 
-        swapper.swapStoreData(STORE_NAME, temporaryDir.getAbsolutePath(), currentVersion + 1);
+        swapper.fetchAndSwapStoreData(STORE_NAME, temporaryDir.getAbsolutePath(), currentVersion + 1);
 
         // Check the directories and entries
         for(int nodeId = 0; nodeId < NUM_NODES; nodeId++) {
@@ -240,7 +307,7 @@ public class StoreSwapperTest {
         Utils.mkdirs(new File(baseDirs[1], "version-" + Long.toString(currentVersion + 3)));
 
         try {
-            swapper.swapStoreData(STORE_NAME, temporaryDir.getAbsolutePath(), currentVersion + 3);
+            swapper.fetchAndSwapStoreData(STORE_NAME, temporaryDir.getAbsolutePath(), currentVersion + 3);
             fail("Should throw a VoldemortException during pushing to node 0");
         } catch(VoldemortException e) {}
 
@@ -273,7 +340,7 @@ public class StoreSwapperTest {
                      + " is not equal to others");
         }
 
-        swapper.swapStoreData(STORE_NAME, temporaryDir.getAbsolutePath(), currentVersion + 1);
+        swapper.fetchAndSwapStoreData(STORE_NAME, temporaryDir.getAbsolutePath(), currentVersion + 1);
 
         // Check the directories and entries
         for(int nodeId = 0; nodeId < NUM_NODES; nodeId++) {
@@ -292,7 +359,7 @@ public class StoreSwapperTest {
         Utils.mkdirs(new File(baseDirs[1], "version-" + Long.toString(currentVersion + 3)));
 
         try {
-            swapper.swapStoreData(STORE_NAME, temporaryDir.getAbsolutePath(), currentVersion + 3);
+            swapper.fetchAndSwapStoreData(STORE_NAME, temporaryDir.getAbsolutePath(), currentVersion + 3);
             fail("Should throw a VoldemortException during pushing to node 0");
         } catch(VoldemortException e) {}
 
@@ -331,7 +398,7 @@ public class StoreSwapperTest {
 
         // Try to fetch in v2, which should fail on all
         try {
-            swapper.swapStoreData(STORE_NAME, temporaryDir.getAbsolutePath(), currentVersion + 2);
+            swapper.fetchAndSwapStoreData(STORE_NAME, temporaryDir.getAbsolutePath(), currentVersion + 2);
             fail("Should throw a VoldemortException during pushing to node 0, 1");
         } catch(VoldemortException e) {}
 
@@ -351,7 +418,7 @@ public class StoreSwapperTest {
                                           MetadataStore.VoldemortState.REBALANCING_MASTER_SERVER);
 
         try {
-            swapper.swapStoreData(STORE_NAME, temporaryDir.getAbsolutePath(), currentVersion + 4);
+            swapper.fetchAndSwapStoreData(STORE_NAME, temporaryDir.getAbsolutePath(), currentVersion + 4);
             fail("Should have thrown exception during swapping");
         } catch(VoldemortException e) {}
 
@@ -369,7 +436,7 @@ public class StoreSwapperTest {
         servers[1].getMetadataStore().put(MetadataStore.SERVER_STATE_KEY,
                                           MetadataStore.VoldemortState.NORMAL_SERVER);
 
-        swapper.swapStoreData(STORE_NAME, temporaryDir.getAbsolutePath(), currentVersion + 5);
+        swapper.fetchAndSwapStoreData(STORE_NAME, temporaryDir.getAbsolutePath(), currentVersion + 5);
 
         for(int nodeId = 0; nodeId < NUM_NODES; nodeId++) {
             long currentNodeVersion = adminClient.readonlyOps.getROCurrentVersion(nodeId,

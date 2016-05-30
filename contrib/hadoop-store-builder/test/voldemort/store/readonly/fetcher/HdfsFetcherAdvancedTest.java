@@ -1,12 +1,12 @@
 /*
  * Copyright 2008-2009 LinkedIn, Inc
- * 
+ *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not
  * use this file except in compliance with the License. You may obtain a copy of
  * the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
  * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
@@ -26,10 +26,8 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.FilterInputStream;
 import java.io.IOException;
-import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.Random;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 
@@ -40,7 +38,6 @@ import org.apache.commons.codec.binary.Hex;
 import org.apache.commons.io.FileUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FSDataInputStream;
-import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.junit.Test;
@@ -60,7 +57,7 @@ import voldemort.store.readonly.ReadOnlyStorageMetadata;
 import voldemort.store.readonly.checksum.CheckSum;
 import voldemort.store.readonly.checksum.CheckSum.CheckSumType;
 import voldemort.store.readonly.checksum.CheckSumTests;
-import voldemort.store.readonly.swapper.InvalidBootstrapURLException;
+import voldemort.store.readonly.UnauthorizedStoreException;
 import voldemort.store.readonly.utils.ReadOnlyTestUtils;
 import voldemort.utils.Utils;
 
@@ -115,7 +112,7 @@ public class HdfsFetcherAdvancedTest {
 
     /**
      * Create a temporary directory that is a child of the given directory
-     * 
+     *
      * @param parent The parent directory
      * @return The temporary directory
      */
@@ -219,11 +216,11 @@ public class HdfsFetcherAdvancedTest {
         File destination = new File(testDestDir.getAbsolutePath() + "1");
 
         stats = new HdfsCopyStats(sourceString,
-                                  destination,
-                                  enableStatsFile,
-                                  5,
-                                  false,
-                                  hdfsPathInfo);
+                destination,
+                enableStatsFile,
+                5,
+                false,
+                hdfsPathInfo);
         copyLocation = new File(destination, finalIndexFileName);
 
         Utils.mkdirs(destination);
@@ -283,7 +280,7 @@ public class HdfsFetcherAdvancedTest {
 
     /*
      * Tests that HdfsFetcher can correctly fetch a file in happy path
-     * 
+     *
      * Checks for both checksum and correctness in case of decompression.
      */
     @Test
@@ -374,14 +371,14 @@ public class HdfsFetcherAdvancedTest {
          // When disk quota is 0 expect InvalidBootsrapURLException. What this
          // mean is no new stores will be onboarded on the fly during BnP
          testForDiskQuota(0, 2048);
-         } catch(InvalidBootstrapURLException e) {
+         } catch(UnauthorizedStoreException e) {
          // This is expected
          testhasErrors = true;
          } catch(Exception e) {
             Assert.fail("testForDiskQuota(0, 2048) failed with Exception: " + e);
          }
          if(!testhasErrors) {
-            Assert.fail("testForDiskQuota(0, 2048) should have failed with InvalidBootstrapURLException.");
+            Assert.fail("testForDiskQuota(0, 2048) should have failed with UnauthorizedStoreException.");
          }
 
 
@@ -508,7 +505,7 @@ public class HdfsFetcherAdvancedTest {
     /*
      * Tests that HdfsFetcher can correctly fetch a file when there is an
      * IOException, specifically an EofException during the fetch
-     * 
+     *
      * For a compressed input, exception is acceptable.
      */
     @Test
@@ -572,7 +569,7 @@ public class HdfsFetcherAdvancedTest {
     /*
      * Tests that HdfsFetcher can correctly handle when there is an
      * RuntimeException
-     * 
+     *
      * Expected- the exception should be consumed without spilling it over
      */
 
@@ -597,12 +594,12 @@ public class HdfsFetcherAdvancedTest {
     /*
      * Tests that corrupted compressed stream triggers exception when servers
      * starts to decompress.
-     * 
+     *
      * 1. We produce random bytes in index and data files
-     * 
+     *
      * 2. We rename them to end with ".gz" to simulate corrupted compressed
      * streams
-     * 
+     *
      * 3. We run the fetcher. Fetcher would see the ".gz" extension and starts
      * decompressing and does not find right GZIP headers . Thus produces
      * exception.

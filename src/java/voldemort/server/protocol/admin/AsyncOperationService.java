@@ -21,11 +21,13 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.log4j.Logger;
 
 import voldemort.VoldemortException;
+import voldemort.annotations.jmx.JmxGetter;
 import voldemort.annotations.jmx.JmxManaged;
 import voldemort.annotations.jmx.JmxOperation;
 import voldemort.common.service.AbstractService;
@@ -74,22 +76,34 @@ public class AsyncOperationService extends AbstractService {
     }
 
     /**
-     * Is a request complete? If so, forget the operations
+     * Check if the an operation is done or not. 
      * 
      * @param requestId Id of the request
+     * @param remove Whether remove the request out of the list if it is done.
      * @return True if request is complete, false otherwise
      */
-    public synchronized boolean isComplete(int requestId) {
-        if(!operations.containsKey(requestId))
+    public synchronized boolean isComplete(int requestId, boolean remove) {
+        if (!operations.containsKey(requestId))
             throw new VoldemortException("No operation with id " + requestId + " found");
 
-        if(operations.get(requestId).getStatus().isComplete()) {
-            logger.debug("Operation complete " + requestId);
-            operations.remove(requestId);
+        if (operations.get(requestId).getStatus().isComplete()) {
+            if (logger.isDebugEnabled())
+                logger.debug("Operation complete " + requestId);
+
+            if (remove)
+                operations.remove(requestId);
 
             return true;
         }
+
         return false;
+    }
+    /**
+     * A default caller. remove operations ID out of the list when it is done.
+     * @param requestId Id of the request
+     */
+    public synchronized boolean isComplete(int requestId) {
+        return isComplete(requestId, true);
     }
 
     // Wrap getOperationStatus to avoid throwing exception over JMX
@@ -145,7 +159,8 @@ public class AsyncOperationService extends AbstractService {
 
         List<Integer> keyList = new ArrayList<Integer>();
         for(int key: keySet) {
-            if(!operations.get(key).getStatus().isComplete())
+            AsyncOperation operation = operations.get(key);
+            if(operation != null && !operation.getStatus().isComplete())
                 keyList.add(key);
         }
         return keyList;
@@ -195,4 +210,33 @@ public class AsyncOperationService extends AbstractService {
     protected void stopInner() {
         logger.info("Stopping asyncOperationRunner");
     }
+
+    @JmxGetter(name = "totalWaitTime",
+            description = "Cumulative number of seconds spent by all tasks in Queue Waiting")
+    public long totalWaitTime() {
+        long totalWaitTimeMs = 0;
+        Set<Integer> keySet = ImmutableSet.copyOf(operations.keySet());
+        for(int key: keySet) {
+            AsyncOperation operation = operations.get(key);
+            if(operation != null && !operation.getStatus().isComplete()) {
+                totalWaitTimeMs += operation.getWaitTimeMs();
+            }
+        }
+        return TimeUnit.SECONDS.convert(totalWaitTimeMs, TimeUnit.MILLISECONDS);
+    }
+
+    @JmxGetter(name = "numWaitingTasks", description = "Total number of tasks waiting in the Queue")
+    public long waitingTasks() {
+        long waitingTasks = 0;
+        Set<Integer> keySet = ImmutableSet.copyOf(operations.keySet());
+        for(int key: keySet) {
+            AsyncOperation operation = operations.get(key);
+            if(operation != null && !operation.getStatus().isComplete()) {
+                if(operation.isWaiting())
+                    waitingTasks++;
+            }
+        }
+        return waitingTasks;
+    }
+
 }

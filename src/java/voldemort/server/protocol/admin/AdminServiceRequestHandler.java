@@ -29,6 +29,8 @@ import java.util.List;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 import org.apache.commons.io.IOUtils;
 import org.apache.log4j.Logger;
@@ -70,6 +72,7 @@ import voldemort.store.backup.NativeBackupable;
 import voldemort.store.metadata.MetadataStore;
 import voldemort.store.mysql.MysqlStorageEngine;
 import voldemort.store.quota.QuotaType;
+import voldemort.store.quota.QuotaUtils;
 import voldemort.store.readonly.FileFetcher;
 import voldemort.store.readonly.ReadOnlyStorageConfiguration;
 import voldemort.store.readonly.ReadOnlyStorageEngine;
@@ -111,6 +114,7 @@ public class AdminServiceRequestHandler implements RequestHandler {
     private final static Logger logger = Logger.getLogger(AdminServiceRequestHandler.class);
 
     private final static Object lock = new Object();
+    private final static Lock storeLock = new ReentrantLock();
 
     private final ErrorCodeMapper errorCodeMapper;
     private final MetadataStore metadataStore;
@@ -1009,7 +1013,7 @@ public class AdminServiceRequestHandler implements RequestHandler {
         return currentDirPath;
     }
 
-    public VAdminProto.SwapStoreResponse handleSwapROStore(VAdminProto.SwapStoreRequest request) {
+    public VAdminProto.SwapStoreResponse handleSwapROStore( VAdminProto.SwapStoreRequest request) {
         final String dir = request.getStoreDir();
         final String storeName = request.getStoreName();
         VAdminProto.SwapStoreResponse.Builder response = VAdminProto.SwapStoreResponse.newBuilder();
@@ -1086,94 +1090,39 @@ public class AdminServiceRequestHandler implements RequestHandler {
                         + storeName + " Generated version " + pushVersion);
             }
 
-            asyncService.submitOperation(requestId, new AsyncOperation(requestId, "Fetch store '" + storeName + "' v" + pushVersion) {
+            Long diskQuotaSizeInKB = QuotaUtils.getQuota(storeName, QuotaType.STORAGE_SPACE, storeRepository);
 
-                private String fetchDirPath = null;
+            ReadOnlyStoreFetchOperation operation = new ReadOnlyStoreFetchOperation(requestId,
+                                                                                    metadataStore,
+                                                                                    store,
+                                                                                    fileFetcher,
+                                                                                    storeName,
+                                                                                    fetchUrl,
+                                                                                    pushVersion,
+                                                                                    diskQuotaSizeInKB);
+            AdminServiceRequestHandler.storeLock.lock();
 
-                @Override
-                public void markComplete() {
-                    if(fetchDirPath != null)
-                        status.setStatus(fetchDirPath);
-                    status.setComplete(true);
-                }
+            try {
+                boolean complete;
+                int previousRequestId = store.getFetchingRequest();
 
-                @Override
-                public void operate() {
-
-                    File fetchDir = null;
-
-                    if(fileFetcher == null) {
-
-                        logger.warn("File fetcher class has not instantiated correctly. Assuming local file");
-
-                        if(!Utils.isReadableDir(fetchUrl)) {
-                            throw new VoldemortException("Fetch url " + fetchUrl
-                                                         + " is not readable");
-                        }
-
-                        fetchDir = new File(store.getStoreDirPath(), "version-"
-                                                                     + Long.toString(pushVersion));
-
-                        if(fetchDir.exists())
-                            throw new VoldemortException("Version directory "
-                                                         + fetchDir.getAbsolutePath()
-                                                         + " already exists");
-
-                        Utils.move(new File(fetchUrl), fetchDir);
-
-                    } else {
-
-                        logger.info("Started executing fetch of " + fetchUrl + " for RO store '"
-                                + storeName + "' version " + pushVersion);
-                        updateStatus("0 MB copied at 0 MB/sec - 0 % complete");
-
-                        try {
-
-                            String destinationDir = store.getStoreDirPath() + File.separator + "version-"
-                                            + Long.toString(pushVersion);
-                            fetchDir = fileFetcher.fetch(fetchUrl,
-                                                      destinationDir,
-                                                      status,
-                                                      storeName,
-                                                      pushVersion,
-                                                      metadataStore);
-                            if(fetchDir == null) {
-                                String errorMessage = "File fetcher failed for "
-                                                      + fetchUrl
-                                                      + " and store '"
-                                                      + storeName
-                                                      + "' due to incorrect input path/checksum error";
-                                updateStatus(errorMessage);
-                                logger.error(errorMessage);
-                                throw new VoldemortException(errorMessage);
-                            } else {
-                                String message = "Successfully executed fetch of " + fetchUrl
-                                                 + " for RO store '" + storeName + "'";
-                                updateStatus(message);
-                                logger.info(message);
-                            }
-                        } catch(VoldemortException ve) {
-                            String errorMessage = "File fetcher failed for " + fetchUrl
-                                                  + " and store '" + storeName + "' Reason: \n"
-                                                  + ve.getMessage();
-                            updateStatus(errorMessage);
-                            logger.error(errorMessage, ve);
-                            throw ve;
-                        } catch(Exception e) {
-                            throw new VoldemortException("Exception in Fetcher = " + e.getMessage(),
-                                                         e);
-                        }
-
+                if (previousRequestId != ReadOnlyStorageEngine.NO_FETCH_IN_PROGRESS) {
+                    try {
+                        complete = asyncService.isComplete(store.getFetchingRequest(), false);
+                    } catch (VoldemortException e) {
+                        complete = true;
                     }
-                    fetchDirPath = fetchDir.getAbsolutePath();
+
+                    if (!complete)
+                        throw new VoldemortException("The store: " + storeName + " is currently blocked since it is fetching data " +
+                                "(existing operation request ID: " + previousRequestId + ")");
                 }
 
-                @Override
-                public void stop() {
-                    status.setException(new AsyncOperationStoppedException("Fetcher interrupted"));
-                }
-            });
-
+                store.setFetchingRequest(requestId);
+                asyncService.submitOperation(requestId, operation);
+            }finally {
+                AdminServiceRequestHandler.storeLock.unlock();
+            }
         } catch(VoldemortException e) {
             response.setError(ProtoUtils.encodeError(errorCodeMapper, e));
             logger.error("handleFetchStore failed for request(" + request.toString() + ")", e);
@@ -1707,15 +1656,14 @@ public class AdminServiceRequestHandler implements RequestHandler {
                     // effect of updating the stores.xml file)
                     try {
                         metadataStore.addStoreDefinition(def);
+                        
+                        long defaultQuota = voldemortConfig.getDefaultStorageSpaceQuotaInKB();
 
-                        /*
-                         * set quota to a default value as specified in the
-                         * server configs
-                         */
-                        adminClient.quotaMgmtOps.setQuotaForNode(def.getName(),
-                                                                 QuotaType.STORAGE_SPACE,
-                                                                 metadataStore.getNodeId(),
-                                                                 voldemortConfig.getDefaultStorageSpaceQuotaInKB());
+                        QuotaUtils.setQuota(def.getName(), 
+                                            QuotaType.STORAGE_SPACE, 
+                                            storeRepository, 
+                                            metadataStore.getCluster().getNodeIds(),
+                                            defaultQuota);
                     } catch(Exception e) {
                         // rollback open store operation
                         boolean isReadOnly = ReadOnlyStorageConfiguration.TYPE_NAME.equals(def.getType());
@@ -2086,15 +2034,7 @@ public class AdminServiceRequestHandler implements RequestHandler {
         } else {
             FailedFetchLock distributedLock = null;
             try {
-                Class<? extends FailedFetchLock> failedFetchLockClass =
-                        (Class<? extends FailedFetchLock>) Class.forName(voldemortConfig.getHighAvailabilityPushLockImplementation());
-
-                Props props = new Props(extraInfoProperties);
-
-                // Pass both server properties and the remote job's properties to the FailedFetchLock constructor
-                Object[] failedFetchLockParams = new Object[]{voldemortConfig, props};
-
-                distributedLock = ReflectUtils.callConstructor(failedFetchLockClass, failedFetchLockParams);
+                distributedLock = FailedFetchLock.getLock(voldemortConfig, new Props(extraInfoProperties));
 
                 distributedLock.acquireLock();
 
@@ -2106,8 +2046,32 @@ public class AdminServiceRequestHandler implements RequestHandler {
 
                 if (allNodesToBeDisabled.size() > maxNodeFailure) {
                     // Too many exceptions to tolerate this strategy... let's bail out.
-                    responseMessage = "We cannot use pushHighAvailability because it would bring the total number of " +
-                                         "nodes with disabled stores to more than " + maxNodeFailure + "...";
+                    StringBuilder stringBuilder = new StringBuilder();
+                    stringBuilder.append("We cannot use pushHighAvailability because it would bring the total ");
+                    stringBuilder.append("number of nodes with disabled stores to more than ");
+                    stringBuilder.append(maxNodeFailure);
+                    stringBuilder.append("... alreadyDisabledNodes: [");
+                    boolean firstItem = true;
+                    for (Integer nodeId: alreadyDisabledNodes) {
+                        if (firstItem) {
+                            firstItem = false;
+                        } else {
+                            stringBuilder.append(", ");
+                        }
+                        stringBuilder.append(nodeId);
+                    }
+                    stringBuilder.append("], nodesFailedInThisFetch: [");
+                    firstItem = true;
+                    for (Integer nodeId: nodesFailedInThisFetch) {
+                        if (firstItem) {
+                            firstItem = false;
+                        } else {
+                            stringBuilder.append(", ");
+                        }
+                        stringBuilder.append(nodeId);
+                    }
+                    stringBuilder.append("]");
+                    responseMessage = stringBuilder.toString();
                     logger.error(responseMessage);
                 } else {
                     String nodesString = "node";

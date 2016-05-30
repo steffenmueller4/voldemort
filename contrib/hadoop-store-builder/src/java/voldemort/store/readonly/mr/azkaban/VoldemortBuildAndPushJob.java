@@ -1,12 +1,12 @@
 /*
  * Copyright 2008-2013 LinkedIn, Inc
- * 
+ *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not
  * use this file except in compliance with the License. You may obtain a copy of
  * the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
  * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
@@ -61,6 +61,7 @@ import voldemort.store.readonly.checksum.CheckSum.CheckSumType;
 import voldemort.store.readonly.disk.KeyValueWriter;
 import voldemort.store.readonly.hooks.BuildAndPushHook;
 import voldemort.store.readonly.hooks.BuildAndPushStatus;
+import voldemort.store.readonly.mr.AbstractStoreBuilderConfigurable;
 import voldemort.store.readonly.mr.AvroStoreBuilderMapper;
 import voldemort.store.readonly.mr.HadoopStoreBuilder;
 import voldemort.store.readonly.mr.JsonStoreBuilderMapper;
@@ -110,6 +111,7 @@ public class VoldemortBuildAndPushJob extends AbstractJob {
     public final static String PUSH_CLUSTER = "push.cluster";
     public final static String PUSH_STORE_OWNERS = "push.store.owners";
     public final static String PUSH_STORE_DESCRIPTION = "push.store.description";
+    public final static String ENABLE_STORE_CREATION = "enable.store.creation";
     // push.optional
     public final static String PUSH_HTTP_TIMEOUT_SECONDS = "push.http.timeout.seconds";
     public final static String PUSH_VERSION = "push.version";
@@ -121,7 +123,6 @@ public class VoldemortBuildAndPushJob extends AbstractJob {
     // others.optional
     public final static String KEY_SELECTION = "key.selection";
     public final static String VALUE_SELECTION = "value.selection";
-    public final static String NUM_CHUNKS = "num.chunks";
     public final static String BUILD = "build";
     public final static String PUSH = "push";
     public final static String VOLDEMORT_FETCHER_PROTOCOL = "voldemort.fetcher.protocol";
@@ -164,6 +165,7 @@ public class VoldemortBuildAndPushJob extends AbstractJob {
     private final boolean pushHighAvailability;
     private final List<Closeable> closeables = Lists.newArrayList();
     private final ExecutorService executorService;
+    private final boolean enableStoreCreation;
 
     // Mutable state
     private StoreDefinition storeDef;
@@ -189,6 +191,8 @@ public class VoldemortBuildAndPushJob extends AbstractJob {
         String clusterUrlText = props.getString(PUSH_CLUSTER);
         for(String url: Utils.COMMA_SEP.split(clusterUrlText.trim())) {
             if(url.trim().length() > 0) {
+                if (clusterURLs.contains(url))
+                    throw new VoldemortException("the URL: " + url + " is duplicated. Please check it out.");
                 this.clusterURLs.add(url);
                 AdminClient adminClient = new AdminClient(new ClientConfig().setBootstrapUrls(url)
                                                                             .setConnectionTimeout(15,
@@ -264,6 +268,9 @@ public class VoldemortBuildAndPushJob extends AbstractJob {
         // If the job sets Push HA to false, then it will be disabled, no matter what the server asks for.
         this.pushHighAvailability = props.getBoolean(VoldemortConfig.PUSH_HA_ENABLED, true);
 
+        //By default, BnP plugin is able to create new store during the push if sotres are not found at the cluster.
+        this.enableStoreCreation = props.getBoolean(ENABLE_STORE_CREATION, true);
+
         // Initializing hooks
         this.heartBeatHookIntervalTime = props.getInt(HEARTBEAT_HOOK_INTERVAL_MS, 60000);
         this.heartBeatHookRunnable = new HeartBeatHookRunnable(heartBeatHookIntervalTime);
@@ -310,10 +317,10 @@ public class VoldemortBuildAndPushJob extends AbstractJob {
     }
 
     /**
-     * 
+     *
      * Compare two clusters to see if they have the equal number of partitions,
      * equal number of nodes and each node hosts the same partition ids.
-     * 
+     *
      * @param lhs Left hand side Cluster object
      * @param rhs Right hand side cluster object
      * @return True if the clusters are congruent (equal number of partitions,
@@ -346,10 +353,10 @@ public class VoldemortBuildAndPushJob extends AbstractJob {
 
     /**
      * Check if all cluster objects in the list are congruent.
-     * 
+     *
      * @param clusterUrls of cluster objects
      * @return
-     * 
+     *
      */
     private void allClustersEqual(final List<String> clusterUrls) {
         Validate.notEmpty(clusterUrls, "clusterUrls cannot be null");
@@ -604,7 +611,7 @@ public class VoldemortBuildAndPushJob extends AbstractJob {
                 if(props.containsKey(HADOOP_JOB_UGI)) {
                     jobConf.set(HADOOP_JOB_UGI, props.getString(HADOOP_JOB_UGI));
                 }
-                log.info("Informing about delete start ..." + buildOutputDir);
+                log.info("Cleaning up: Deleting BnP output and temp files from HDFS: " + buildOutputDir);
                 HadoopUtils.deletePathIfExists(jobConf, buildOutputDir);
                 log.info("Deleted " + buildOutputDir);
             }
@@ -670,9 +677,9 @@ public class VoldemortBuildAndPushJob extends AbstractJob {
         // Only if its a avro job we supply some additional fields
         // for the key value schema of the avro record
         if(this.isAvroJob) {
-            configuration.set("avro.rec.schema", getRecordSchema());
-            configuration.set("avro.key.schema", getKeySchema());
-            configuration.set("avro.val.schema", getValueSchema());
+            configuration.set(HadoopStoreBuilder.AVRO_REC_SCHEMA, getRecordSchema());
+            configuration.set(AvroStoreBuilderMapper.AVRO_KEY_SCHEMA, getKeySchema());
+            configuration.set(AvroStoreBuilderMapper.AVRO_VALUE_SCHEMA, getValueSchema());
             configuration.set(VoldemortBuildAndPushJob.AVRO_KEY_FIELD, this.keyFieldName);
             configuration.set(VoldemortBuildAndPushJob.AVRO_VALUE_FIELD, this.valueFieldName);
             mapperClass = AvroStoreBuilderMapper.class;
@@ -680,6 +687,11 @@ public class VoldemortBuildAndPushJob extends AbstractJob {
         } else {
             mapperClass = JsonStoreBuilderMapper.class;
             inputFormatClass = JsonSequenceFileInputFormat.class;
+        }
+
+        if (props.containsKey(AbstractStoreBuilderConfigurable.NUM_CHUNKS)) {
+            log.warn("N.B.: The '" + AbstractStoreBuilderConfigurable.NUM_CHUNKS + "' config parameter is now " +
+                     "deprecated and ignored. The BnP job will automatically determine a proper value for this setting.");
         }
 
         HadoopStoreBuilder builder = new HadoopStoreBuilder(getId() + "-build-store",
@@ -696,7 +708,6 @@ public class VoldemortBuildAndPushJob extends AbstractJob {
                                                             props.getBoolean(SAVE_KEYS, true),
                                                             props.getBoolean(REDUCER_PER_BUCKET, true),
                                                             props.getInt(BUILD_CHUNK_SIZE, 1024 * 1024 * 1024),
-                                                            props.getInt(NUM_CHUNKS, -1),
                                                             this.isAvroJob,
                                                             this.minNumberOfRecords,
                                                             this.buildPrimaryReplicasOnly);
@@ -927,8 +938,9 @@ public class VoldemortBuildAndPushJob extends AbstractJob {
         StoreDefinition newStoreDef = VoldemortUtils.getStoreDef(newStoreDefXml);
 
         try {
-            adminClientPerCluster.get(clusterURL).storeMgmtOps.verifyOrAddStore(newStoreDef, "BnP config/data");
+            adminClientPerCluster.get(clusterURL).storeMgmtOps.verifyOrAddStore(newStoreDef, "BnP config/data", enableStoreCreation);
         } catch (UnreachableStoreException e) {
+            log.info("verifyOrAddStore() failed on some nodes for clusterURL: " + clusterURL + " (this is harmless).", e);
             // When we can't reach some node, we just skip it and won't create the store on it.
             // Next time BnP is run while the node is up, it will get the store created.
         } // Other exceptions need to bubble up!

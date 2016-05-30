@@ -1067,11 +1067,13 @@ public class ServerTestUtils {
      * @param socketStoreFactory
      * @param config
      * @param cluster
+     * @param testConnection
      * @return
      */
     public static VoldemortServer startVoldemortServer(SocketStoreFactory socketStoreFactory,
                                                        VoldemortConfig config,
-                                                       Cluster cluster) throws BindException {
+                                                       Cluster cluster,
+                                                       boolean testConnection) throws BindException {
 
         // TODO: Some tests that use this method fail intermittently with the
         // following output:
@@ -1100,7 +1102,8 @@ public class ServerTestUtils {
                     server = new VoldemortServer(config);
                 }
                 server.start();
-                ServerTestUtils.waitForServerStart(socketStoreFactory, server.getIdentityNode());
+                if (testConnection)
+                    ServerTestUtils.waitForServerStart(socketStoreFactory, server.getIdentityNode());
                 // wait till server starts or throw exception
                 success = true;
                 return server;
@@ -1127,12 +1130,28 @@ public class ServerTestUtils {
     }
 
     public static VoldemortServer startVoldemortServer(SocketStoreFactory socketStoreFactory,
+                                                       VoldemortConfig config,
+                                                       Cluster cluster) throws BindException {
+        return startVoldemortServer(socketStoreFactory, config, cluster, true);
+    }
+
+
+    public static VoldemortServer startVoldemortServer(SocketStoreFactory socketStoreFactory,
                                                        VoldemortConfig config) throws BindException {
         return startVoldemortServer(socketStoreFactory, config, null);
     }
 
+    /**
+     * Test if socket connection is available on the node
+     *
+     *
+     * @param socketStoreFactory
+     * @param node
+     */
     public static void waitForServerStart(SocketStoreFactory socketStoreFactory, Node node) {
         boolean success = false;
+        UnreachableStoreException exception = null;
+
         int retries = 10;
         Store<ByteArray, ?, ?> store = null;
         while(retries-- > 0 && !success) {
@@ -1143,21 +1162,21 @@ public class ServerTestUtils {
                 store.get(new ByteArray(MetadataStore.CLUSTER_KEY.getBytes()), null);
                 success = true;
             } catch(UnreachableStoreException e) {
-                store.close();
-                store = null;
                 System.out.println("UnreachableSocketStore sleeping will try again " + retries
                                    + " times.");
+                exception = e;
                 try {
                     Thread.sleep(1000);
                 } catch(InterruptedException e1) {
                     // ignore
                 }
+            }finally{
+                store.close();
+                store = null;
             }
         }
-
-        store.close();
         if(!success)
-            throw new RuntimeException("Failed to connect with server:" + node);
+            throw exception;
     }
 
     /***
@@ -1224,14 +1243,14 @@ public class ServerTestUtils {
         for(int nodeId: cluster.getNodeIds()) {
 
             voldemortServers[count] = ServerTestUtils.startVoldemortServer(socketStoreFactory,
-                                                                           ServerTestUtils.createServerConfig(useNio,
-                                                                                                              nodeId,
-                                                                                                              TestUtils.createTempDir()
-                                                                                                                       .getAbsolutePath(),
-                                                                                                              clusterFile,
-                                                                                                              storeFile,
-                                                                                                              properties),
-                                                                           cluster);
+                    ServerTestUtils.createServerConfig(useNio,
+                            nodeId,
+                            TestUtils.createTempDir()
+                                    .getAbsolutePath(),
+                            clusterFile,
+                            storeFile,
+                            properties),
+                    cluster);
             count++;
         }
         return cluster;

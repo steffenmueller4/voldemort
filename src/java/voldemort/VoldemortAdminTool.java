@@ -85,6 +85,7 @@ import voldemort.store.compress.CompressionStrategy;
 import voldemort.store.compress.CompressionStrategyFactory;
 import voldemort.store.metadata.MetadataStore;
 import voldemort.store.metadata.MetadataStore.VoldemortState;
+import voldemort.store.quota.QuotaType;
 import voldemort.store.quota.QuotaUtils;
 import voldemort.store.readonly.ReadOnlyStorageConfiguration;
 import voldemort.store.system.SystemStoreConstants;
@@ -367,7 +368,7 @@ public class VoldemortAdminTool {
                  || options.has("verify-metadata-version") || options.has("reserve-memory")
                  || options.has("purge-slops") || options.has("show-routing-plan")
                  || options.has("query-key") || options.has("set-quota")
-                 || options.has("unset-quota") || options.has("get-quota"))) {
+                 || options.has("unset-quota") || options.has("get-quota") || options.has("synchronize-metadata-version"))) {
                 System.err.println("Missing required arguments: " + Joiner.on(", ").join(missing));
                 printHelp(System.err, parser);
                 System.exit(1);
@@ -724,7 +725,7 @@ public class VoldemortAdminTool {
                 }
                 executePurgeSlops(adminClient, nodesToPurge, zoneId, storeNames);
             } else if(options.has("synchronize-metadata-version")) {
-                synchronizeMetadataVersion(adminClient, nodeId);
+                synchronizeMetadataVersion(adminClient);
             } else if(options.has("verify-metadata-version")) {
                 checkMetadataVersion(adminClient);
             } else if(options.has("show-routing-plan")) {
@@ -877,20 +878,15 @@ public class VoldemortAdminTool {
         }
     }
 
-    private static void synchronizeMetadataVersion(AdminClient adminClient, int baseNodeId) {
-        String valueObject = getMetadataVersionsForNode(adminClient, baseNodeId);
-        Properties props = new Properties();
+    private static void synchronizeMetadataVersion(AdminClient adminClient) {
         try {
-            props.load(new ByteArrayInputStream(valueObject.getBytes()));
-            if(props.size() == 0) {
-                System.err.println("The specified node does not have any versions metadata ! Exiting ...");
-                System.exit(-1);
-            }
-            adminClient.metadataMgmtOps.setMetadataversion(props);
+            List<String> versionKeys = new ArrayList<String>();
+            adminClient.metadataMgmtOps.updateMetadataversion(adminClient.getAdminClientCluster()
+                                                                         .getNodeIds(), versionKeys);
             System.out.println("Metadata versions synchronized successfully.");
-        } catch(IOException e) {
-            System.err.println("Error while retrieving Metadata versions from node : " + baseNodeId
-                               + ". Exception = \n");
+        } catch(Exception e) {
+            System.err.println("Error while updating Metadata versions. Exception = "
+                               + e.getMessage() + " \n");
             e.printStackTrace();
             System.exit(-1);
         }
@@ -945,7 +941,7 @@ public class VoldemortAdminTool {
             Utils.croak("Store " + storeName + " not in cluster.");
         }
 
-        adminClient.quotaMgmtOps.setQuota(storeName, quotaType, quotaValue);
+        adminClient.quotaMgmtOps.setQuota(storeName, QuotaType.valueOf(quotaType), Long.parseLong(quotaValue));
     }
 
     private static void executeUnsetQuota(AdminClient adminClient,

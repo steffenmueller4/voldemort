@@ -1,12 +1,12 @@
 /*
  * Copyright 2008-2013 LinkedIn, Inc
- * 
+ *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not
  * use this file except in compliance with the License. You may obtain a copy of
  * the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
  * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
@@ -36,6 +36,7 @@ import java.util.Enumeration;
 import java.util.HashSet;
 import java.util.List;
 
+import org.apache.commons.io.IOUtils;
 import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManager;
@@ -64,15 +65,23 @@ import voldemort.server.niosocket.NioSocketService;
 import voldemort.server.protocol.ClientRequestHandlerFactory;
 import voldemort.server.protocol.RequestHandlerFactory;
 import voldemort.server.protocol.SocketRequestHandlerFactory;
+import voldemort.server.protocol.admin.AsyncOperation;
 import voldemort.server.protocol.admin.AsyncOperationService;
 import voldemort.server.rebalance.Rebalancer;
 import voldemort.server.rebalance.RebalancerService;
 import voldemort.server.socket.SocketService;
 import voldemort.server.storage.StorageService;
 import voldemort.store.DisabledStoreException;
+import voldemort.store.StorageEngine;
+import voldemort.store.StoreCapabilityType;
 import voldemort.store.configuration.ConfigurationStorageEngine;
 import voldemort.store.metadata.MetadataStore;
+import voldemort.store.readonly.ReadOnlyStorageEngine;
+import voldemort.store.readonly.StoreVersionManager;
+import voldemort.store.readonly.swapper.FailedFetchLock;
+import voldemort.utils.ByteArray;
 import voldemort.utils.JNAUtils;
+import voldemort.utils.Props;
 import voldemort.utils.SystemTime;
 import voldemort.utils.Utils;
 import voldemort.versioning.VectorClock;
@@ -81,10 +90,10 @@ import voldemort.xml.ClusterMapper;
 
 /**
  * This is the main server, it bootstraps all the services.
- * 
+ *
  * It can be embedded or run directly via it's main method.
- * 
- * 
+ *
+ *
  */
 public class VoldemortServer extends AbstractService {
 
@@ -122,7 +131,7 @@ public class VoldemortServer extends AbstractService {
     /**
      * Constructor is used exclusively by tests. I.e., this is not a code path
      * that is exercised in production.
-     * 
+     *
      * @param config
      * @param cluster
      */
@@ -151,9 +160,9 @@ public class VoldemortServer extends AbstractService {
         version.incrementVersion(voldemortConfig.getNodeId(), System.currentTimeMillis());
 
         metadataInnerEngine.put(MetadataStore.CLUSTER_KEY,
-                                new Versioned<String>(new ClusterMapper().writeCluster(cluster),
-                                                      version),
-                                null);
+                new Versioned<String>(new ClusterMapper().writeCluster(cluster),
+                        version),
+                null);
         this.metadata = new MetadataStore(metadataInnerEngine, voldemortConfig.getNodeId());
 
         this.basicServices = createBasicServices();
@@ -179,7 +188,7 @@ public class VoldemortServer extends AbstractService {
     /**
      * Compare the configured hostname with all the ip addresses and hostnames
      * for the server node, and log a warning if there is a mismatch.
-     * 
+     *
      */
     // TODO: VoldemortServer should throw exception if cluster xml, node id, and
     // server's state are not all mutually consistent.
@@ -453,7 +462,13 @@ public class VoldemortServer extends AbstractService {
         JNAUtils.tryMlockall();
         logger.info("Starting " + basicServices.size() + " services.");
         long start = System.currentTimeMillis();
-        boolean goOnline = true;
+
+        boolean goOnline;
+        if (getMetadataStore().getServerStateUnlocked() == MetadataStore.VoldemortState.OFFLINE_SERVER)
+            goOnline = false;
+        else
+            goOnline = true;
+
         for(VoldemortService service: basicServices) {
             try {
                 service.start();
@@ -463,7 +478,6 @@ public class VoldemortServer extends AbstractService {
                 goOnline = false;
             }
         }
-        if(goOnline) {
             startOnlineServices();
         } else {
             goOffline();
@@ -475,7 +489,7 @@ public class VoldemortServer extends AbstractService {
     /**
      * Attempt to shutdown the server. As much shutdown as possible will be
      * completed, even if intermediate errors are encountered.
-     * 
+     *
      * @throws VoldemortException
      */
     @Override
@@ -580,8 +594,86 @@ public class VoldemortServer extends AbstractService {
     }
 
     public void goOnline() {
-        getMetadataStore().setOfflineState(false);
-        createOnlineServices();
-        startOnlineServices();
+        ReadOnlyStoreStatusValidation validation = validateReadOnlyStoreStatusBeforeGoingOnline();
+
+        if (validation.readyToGoOnline) {
+            getMetadataStore().setOfflineState(false);
+            createOnlineServices();
+            startOnlineServices();
+        }
+
+        if (validation.e != null) {
+            throw new VoldemortException("Problem while going online!", validation.e);
+        }
+    }
+
+    private class ReadOnlyStoreStatusValidation {
+        /** Whether the server should go online (i.e.: it has no disabled stores) */
+        private final boolean readyToGoOnline;
+        /** Whether the admin operation should return an error (this is orthogonal to whether the server went online or not) */
+        private final Exception e;
+        ReadOnlyStoreStatusValidation(boolean readyToGoOnline, Exception e) {
+            this.readyToGoOnline = readyToGoOnline;
+            this.e = e;
+        }
+    }
+
+    private ReadOnlyStoreStatusValidation validateReadOnlyStoreStatusBeforeGoingOnline() {
+        List<StorageEngine<ByteArray, byte[], byte[]>> storageEngines =
+                storageService.getStoreRepository().getStorageEnginesByClass(ReadOnlyStorageEngine.class);
+
+        if (storageEngines.isEmpty()) {
+            logger.debug("There are no Read-Only stores on this node.");
+            return new ReadOnlyStoreStatusValidation(true, null);
+        } else {
+            List<String> storesWithDisabledVersions = Lists.newArrayList();
+            for (StorageEngine storageEngine : storageEngines) {
+                StoreVersionManager storeVersionManager = (StoreVersionManager)
+                        storageEngine.getCapability(StoreCapabilityType.DISABLE_STORE_VERSION);
+                if (storeVersionManager.hasAnyDisabledVersion()) {
+                    storesWithDisabledVersions.add(storageEngine.getName());
+                }
+            }
+
+            if (storesWithDisabledVersions.isEmpty()) {
+                if (voldemortConfig.getHighAvailabilityStateAutoCleanUp()) {
+                    logger.info(VoldemortConfig.PUSH_HA_STATE_AUTO_CLEANUP +
+                                "=true, so the server will attempt to delete the HA state for this node, if any.");
+                    FailedFetchLock failedFetchLock = null;
+                    try {
+                        failedFetchLock = FailedFetchLock.getLock(getVoldemortConfig(), new Props());
+                        failedFetchLock.removeObsoleteStateForNode(getVoldemortConfig().getNodeId());
+                        logger.info("Successfully ensured that the BnP HA shared state is cleared for this node.");
+                    } catch (ClassNotFoundException e) {
+                        return new ReadOnlyStoreStatusValidation(true, new VoldemortException("Failed to find FailedFetchLock class!", e));
+                    } catch (Exception e) {
+                        return new ReadOnlyStoreStatusValidation(true, new VoldemortException("Exception while trying to remove obsolete HA state!", e));
+                    } finally {
+                        IOUtils.closeQuietly(failedFetchLock);
+                    }
+                } else {
+                    logger.info(VoldemortConfig.PUSH_HA_STATE_AUTO_CLEANUP +
+                            "=false, so the server will NOT attempt to delete the HA state for this node, if any.");
+                }
+
+                logger.info("No Read-Only stores are disabled. Going online as planned.");
+                return new ReadOnlyStoreStatusValidation(true, null);
+            } else {
+                // OMG, there are disabled stores!
+                StringBuilder stringBuilder = new StringBuilder();
+                stringBuilder.append("Cannot go online, because the following Read-Only stores have some disabled version(s): ");
+                boolean firstItem = true;
+                for (String storeName: storesWithDisabledVersions) {
+                    if (firstItem) {
+                        firstItem = false;
+                    } else {
+                        stringBuilder.append(", ");
+                    }
+                    stringBuilder.append(storeName);
+
+                }
+                return new ReadOnlyStoreStatusValidation(false, new VoldemortException(stringBuilder.toString()));
+            }
+        }
     }
 }

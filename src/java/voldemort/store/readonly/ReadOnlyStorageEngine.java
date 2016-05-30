@@ -41,6 +41,7 @@ import voldemort.store.DisabledStoreException;
 import voldemort.store.StoreCapabilityType;
 import voldemort.store.StoreUtils;
 import voldemort.store.readonly.chunk.ChunkedFileSet;
+import voldemort.store.readonly.swapper.FailedFetchLock;
 import voldemort.utils.ByteArray;
 import voldemort.utils.ByteUtils;
 import voldemort.utils.ClosableIterator;
@@ -59,6 +60,7 @@ import com.google.common.collect.Lists;
 public class ReadOnlyStorageEngine extends AbstractStorageEngine<ByteArray, byte[], byte[]> {
 
     private static Logger logger = Logger.getLogger(ReadOnlyStorageEngine.class);
+    public static final int NO_FETCH_IN_PROGRESS = -1;
 
     // Immutable state
     private final int numBackups, nodeId, deleteBackupMs, maxValueBufferAllocationSize;
@@ -72,6 +74,7 @@ public class ReadOnlyStorageEngine extends AbstractStorageEngine<ByteArray, byte
     private volatile ChunkedFileSet fileSet;
     private volatile boolean isOpen;
     private long lastSwapped;
+    private int lastFetchReqestId;
 
     /**
      * Create an instance of the store
@@ -96,7 +99,8 @@ public class ReadOnlyStorageEngine extends AbstractStorageEngine<ByteArray, byte
              storeDir,
              numBackups,
              0,
-             VoldemortConfig.DEFAULT_RO_MAX_VALUE_BUFFER_ALLOCATION_SIZE);
+             VoldemortConfig.DEFAULT_RO_MAX_VALUE_BUFFER_ALLOCATION_SIZE,
+             null);
     }
 
     /**
@@ -118,8 +122,8 @@ public class ReadOnlyStorageEngine extends AbstractStorageEngine<ByteArray, byte
                                  File storeDir,
                                  int numBackups,
                                  int deleteBackupMs,
-                                 int maxValueBufferAllocationSize) {
-
+                                 int maxValueBufferAllocationSize,
+                                 VoldemortConfig config) {
         super(name);
         this.deleteBackupMs = deleteBackupMs;
         this.storeDir = storeDir;
@@ -135,8 +139,10 @@ public class ReadOnlyStorageEngine extends AbstractStorageEngine<ByteArray, byte
          */
         this.fileModificationLock = new ReentrantReadWriteLock();
         this.isOpen = false;
-        storeVersionManager = new StoreVersionManager(storeDir);
+        storeVersionManager = new StoreVersionManager(storeDir, config);
         open(null);
+
+        lastFetchReqestId = NO_FETCH_IN_PROGRESS;
     }
 
     @Override
@@ -205,7 +211,7 @@ public class ReadOnlyStorageEngine extends AbstractStorageEngine<ByteArray, byte
             // Validate symbolic link, and create it if it doesn't already exist
             Utils.symlink(versionDir.getAbsolutePath(), storeDir.getAbsolutePath() + File.separator + "latest");
             this.fileSet = new ChunkedFileSet(versionDir, routingStrategy, nodeId, maxValueBufferAllocationSize);
-            storeVersionManager.syncInternalStateFromFileSystem();
+            storeVersionManager.syncInternalStateFromFileSystem(false);
             this.lastSwapped = System.currentTimeMillis();
             this.isOpen = true;
         } catch(IOException e) {
@@ -408,7 +414,7 @@ public class ReadOnlyStorageEngine extends AbstractStorageEngine<ByteArray, byte
                     Utils.rm(file);
                     logger.info("Deleting of " + file.getAbsolutePath()
                                 + " completed successfully.");
-                    storeVersionManager.syncInternalStateFromFileSystem();
+                    storeVersionManager.syncInternalStateFromFileSystem(true);
                 } catch(Exception e) {
                     logger.error("Exception during deleteAsync for path: " + file, e);
                 }
@@ -662,4 +668,8 @@ public class ReadOnlyStorageEngine extends AbstractStorageEngine<ByteArray, byte
                     "Store '" + getName() + "' version " + getCurrentVersionId() + " is disabled on this node.");
         }
     }
+
+    public int getFetchingRequest() { return lastFetchReqestId; }
+
+    public void setFetchingRequest(int requestId) { lastFetchReqestId = requestId; }
 }

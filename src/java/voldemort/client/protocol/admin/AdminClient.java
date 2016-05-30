@@ -83,6 +83,7 @@ import voldemort.server.rebalance.VoldemortRebalancingException;
 import voldemort.server.storage.prunejob.VersionedPutPruneJob;
 import voldemort.server.storage.repairjob.RepairJob;
 import voldemort.store.ErrorCodeMapper;
+import voldemort.store.InvalidMetadataException;
 import voldemort.store.Store;
 import voldemort.store.StoreDefinition;
 import voldemort.store.StoreUtils;
@@ -108,6 +109,7 @@ import voldemort.store.system.SystemStoreConstants;
 import voldemort.store.views.ViewStorageConfiguration;
 import voldemort.utils.ByteArray;
 import voldemort.utils.ByteUtils;
+import voldemort.utils.ExceptionUtils;
 import voldemort.utils.MetadataVersionStoreUtils;
 import voldemort.utils.NetworkClassLoader;
 import voldemort.utils.Pair;
@@ -1043,15 +1045,81 @@ public class AdminClient implements Closeable {
      * 
      */
     public class MetadataManagementOperations {
-        private Versioned<Properties> getMetadataVersion(Integer nodeId) throws Exception {
-            ByteArray keyArray;
-            keyArray = new ByteArray(SystemStoreConstants.VERSIONS_METADATA_KEY.getBytes("UTF8"));
+        private ByteArray getKeyArray() {
+            try {
+                return new ByteArray(SystemStoreConstants.VERSIONS_METADATA_KEY.getBytes("UTF8"));
+            } catch (UnsupportedEncodingException ex) {
+                throw new VoldemortApplicationException("Error retrieving metadata version store key", ex);
+            }
+        }
 
+        public Versioned<Properties> getMetadataVersion(Integer nodeId) {
+            ByteArray keyArray = getKeyArray();
             List<Versioned<byte[]>> valueObj = storeOps.getNodeKey(SystemStoreConstants.SystemStoreName.voldsys$_metadata_version_persistence.name(),
                                                                    nodeId,
                                                                    keyArray);
 
             return MetadataVersionStoreUtils.parseProperties(valueObj);
+        }
+
+        private void setMetadataVersion(int nodeId, Versioned<byte[]> value) {
+            ByteArray keyArray = getKeyArray();
+            
+            NodeValue<ByteArray, byte[]> nodeKeyValue = new NodeValue<ByteArray, byte[]>(nodeId, keyArray, value);
+            storeOps.putNodeKeyValue(SystemStoreConstants.SystemStoreName.voldsys$_metadata_version_persistence.name(),
+                                     nodeKeyValue);
+
+        }
+
+        private void setMetadataVersion(Collection<Integer> nodeIds, Versioned<Properties> props) throws Exception {
+
+            if (props == null || props.getValue() == null) {
+                return;
+            }
+
+            if (nodeIds == null || nodeIds.size() == 0) {
+                logger.warn("Ignoring set Metadata versions call due to empty nodeIds");
+                return;
+            }
+
+            Exception lastEx = null;
+            VectorClock version = (VectorClock) props.getVersion();
+            version.incrementVersion(nodeIds.iterator().next(), System.currentTimeMillis());
+            byte[] versionBytes = MetadataVersionStoreUtils.convertToByteArray(props.getValue());
+
+            Versioned<byte[]> value = new Versioned<byte[]>(versionBytes, version);
+            for (Integer nodeId : nodeIds) {
+                try {
+                    setMetadataVersion(nodeId, value);
+                } catch(InvalidMetadataException invalidEx) {
+                    // When Nodes are dropped after a cluster XML update, it
+                    // throws InvalidMetadataException on meta data version
+                    // updates
+                    logger.info("Ignoring InvalidMetadataException as the node is removed from cluster. Node: "
+                                + nodeId);
+                } catch (Exception ex) {
+                    lastEx = ex;
+                    logger.info("Error updating metadata versions on the node " + nodeId, ex);
+                }
+            }
+            
+            if(lastEx != null) {
+                throw lastEx;
+            }
+        }
+
+        /**
+         * Set the meta data versions on all nodes to the provided properties.
+         * 
+         * @param newProperties The new meta data versions to be set across all
+         *        the nodes in the cluster
+         */
+        public void setMetadataVersion(Versioned<Properties> newProperties) {
+            try {
+                setMetadataVersion(getAdminClientCluster().getNodeIds(), newProperties);
+            } catch(Exception ex) {
+                throw new VoldemortApplicationException("Error setting metadata", ex);
+            }
         }
 
         private Versioned<Properties> getMetadataVersion(Collection<Integer> nodeIds) {
@@ -1069,7 +1137,9 @@ public class AdminClient implements Closeable {
 
                     atLeastOneSuccess = true;
                 } catch(Exception e) {
-                    logger.error("Error retrieving metadata versions for node " + nodeId, e);
+                    if (logger.isDebugEnabled()) {
+                        logger.debug("Error retrieving metadata versions for node " + nodeId, e);
+                    }
                 }
             }
             
@@ -1123,8 +1193,7 @@ public class AdminClient implements Closeable {
 
                 versionProps = new Versioned<Properties>(props, versionProps.getVersion());
 
-                MetadataVersionStoreUtils.setProperties(AdminClient.this.metadataVersionSysStoreClient,
-                                                        versionProps);
+                setMetadataVersion(nodeIds, versionProps);
             } catch(Exception ex) {
                 logger.error("Error Updating version on individual nodes falling back to old behavior ",
                              ex);
@@ -1149,27 +1218,6 @@ public class AdminClient implements Closeable {
                                                     props);
         }
 
-        /**
-         * Set the metadata versions to the given set
-         * 
-         * @param newProperties The new metadata versions to be set across all
-         *        the nodes in the cluster
-         */
-        public void setMetadataversion(Properties newProperties) {
-            MetadataVersionStoreUtils.setProperties(AdminClient.this.metadataVersionSysStoreClient,
-                                                    newProperties);
-        }
-
-        /**
-         * Set the metadata versions to the given set
-         * 
-         * @param newProperties The new metadata versions to be set across all
-         *        the nodes in the cluster
-         */
-        public void setMetadataversion(Versioned<Properties> newProperties) {
-            MetadataVersionStoreUtils.setProperties(AdminClient.this.metadataVersionSysStoreClient,
-                                                    newProperties);
-        }
 
         /**
          * Update metadata at the given remoteNodeId.
@@ -1237,20 +1285,18 @@ public class AdminClient implements Closeable {
         public void updateRemoteMetadata(Collection<Integer> remoteNodeIds,
                                          String key,
                                          Versioned<String> value) {
-            /*
-             * Assume everything will be fine, increment the metadata version
-             * for the key Would not harm even if the operation fails
-             */
-            if(key.equals(SystemStoreConstants.CLUSTER_VERSION_KEY)
-               || key.equals(SystemStoreConstants.STORES_VERSION_KEY)) {
-                metadataMgmtOps.updateMetadataversion(remoteNodeIds, key);
-            }
             for(Integer currentNodeId: remoteNodeIds) {
                 logger.info("Setting " + key + " for "
                             + getAdminClientCluster().getNodeById(currentNodeId).getHost() + ":"
                             + getAdminClientCluster().getNodeById(currentNodeId).getId());
                 updateRemoteMetadata(currentNodeId, key, value);
             }
+
+            if(key.equals(SystemStoreConstants.CLUSTER_VERSION_KEY)
+               || key.equals(SystemStoreConstants.STORES_VERSION_KEY)) {
+                metadataMgmtOps.updateMetadataversion(remoteNodeIds, key);
+            }
+
         }
 
         /**
@@ -1396,14 +1442,26 @@ public class AdminClient implements Closeable {
                                              String storesKey,
                                              Versioned<String> storesValue) {
 
-            /*
-             * We first increment the metadata version for the cluster and the
-             * stores which does not harm even if the operation fail
-             */
-            if(clusterKey.equals(SystemStoreConstants.CLUSTER_VERSION_KEY)) {
-                metadataMgmtOps.updateMetadataversion(remoteNodeIds, clusterKey);
+            if (remoteNodeIds == null || remoteNodeIds.size() == 0) {
+                throw new IllegalArgumentException("One ore more nodes expected for NodeIds");
             }
-            if(storesKey.equals(SystemStoreConstants.STORES_VERSION_KEY)) {
+
+            for(Integer currentNodeId: remoteNodeIds) {
+                logger.info("Setting " + clusterKey + " and " + storesKey + " for "
+                            + getAdminClientCluster().getNodeById(currentNodeId).getHost() + ":"
+                            + getAdminClientCluster().getNodeById(currentNodeId).getId());
+                updateRemoteMetadataPair(currentNodeId,
+                                         clusterKey,
+                                         clusterValue,
+                                         storesKey,
+                                         storesValue);
+            }
+
+            if(clusterKey.equals(SystemStoreConstants.CLUSTER_VERSION_KEY)) {
+                // Setting cluster.xml will cause all the stores to be
+                // re-bootstrapped anyway.
+                metadataMgmtOps.updateMetadataversion(remoteNodeIds, clusterKey);
+            } else if (storesKey.equals(SystemStoreConstants.STORES_VERSION_KEY)) {
                 StoreDefinitionsMapper storeDefsMapper = new StoreDefinitionsMapper();
                 List<StoreDefinition> storeDefs = storeDefsMapper.readStoreList(new StringReader(storesValue.getValue()));
                 if(storeDefs != null) {
@@ -1419,16 +1477,7 @@ public class AdminClient implements Closeable {
                     }
                 }
             }
-            for(Integer currentNodeId: remoteNodeIds) {
-                logger.info("Setting " + clusterKey + " and " + storesKey + " for "
-                            + getAdminClientCluster().getNodeById(currentNodeId).getHost() + ":"
-                            + getAdminClientCluster().getNodeById(currentNodeId).getId());
-                updateRemoteMetadataPair(currentNodeId,
-                                         clusterKey,
-                                         clusterValue,
-                                         storesKey,
-                                         storesValue);
-            }
+
         }
 
         /**
@@ -1858,11 +1907,12 @@ public class AdminClient implements Closeable {
          * @param newStoreDef StoreDefinition to make sure exists on all online Voldemort Servers
          * @param localProcessName Name of the process interested in creating the store
          *                         (for example: Build and Push), used for debugging purposes.
+         * @param createStore whether or not add new store if sotres are not found in the cluster.
          * @throws UnreachableStoreException Thrown if one or more server was unreachable. Can
          *                                   potentially be ignored, in certain use cases.
          * @throws VoldemortException Thrown if a server contains an incompatible StoreDefinitions.
          */
-        public void verifyOrAddStore(StoreDefinition newStoreDef, String localProcessName)
+        public void verifyOrAddStore(StoreDefinition newStoreDef, String localProcessName, boolean createStore)
                 throws UnreachableStoreException, VoldemortException {
             if (!newStoreDef.getType().equals(ReadOnlyStorageConfiguration.TYPE_NAME)) {
                 throw new VoldemortException("verifyOrAddStore() is intended only for Read-Only stores!");
@@ -1878,10 +1928,17 @@ public class AdminClient implements Closeable {
                 try {
                     // Get all StoreDefinitions from each nodes in the cluster
                     remoteStoreDefs = metadataMgmtOps.getRemoteStoreDefList(nodeId).getValue();
-                } catch (UnreachableStoreException e) {
-                    logger.warn("Failed to contact " + node.briefToString() + " in order to validate the StoreDefinition.");
-                    unreachableNodes.add(node);
-                    continue;
+                } catch (VoldemortException e) {
+                    // getRemoteStoreDefList() internally results in a socket pool checkout which can throw
+                    // SocketException and possibly other subclasses of IOException, so we check for IOException
+                    // to catch all of these cases...
+                    if (ExceptionUtils.recursiveClassEquals(e, UnreachableStoreException.class, IOException.class)) {
+                        logger.warn("Failed to contact " + node.briefToString() + " in order to validate the StoreDefinition.");
+                        unreachableNodes.add(node);
+                        continue;
+                    } else {
+                        throw e;
+                    }
                 }
 
                 // Go over all StoreDefinitions and see if one has the same name as the store we're trying to build
@@ -1994,6 +2051,9 @@ public class AdminClient implements Closeable {
                 }
             }
 
+            if (!createStore && !nodesMissingNewStore.isEmpty())
+                throw new VoldemortException("Store: " + newStoreDef.getName() + " is not found in the current cluster.");
+
             storeMgmtOps.addStore(newStoreDef, nodesMissingNewStore);
 
             if (unreachableNodes.size() > 0) {
@@ -2009,6 +2069,10 @@ public class AdminClient implements Closeable {
                 }
                 throw new UnreachableStoreException(errorMessage);
             }
+        }
+
+        public void verifyOrAddStore(StoreDefinition newStoreDef, String localProcessName) {
+            verifyOrAddStore(newStoreDef, localProcessName, true);
         }
 
         private String diffMessage(StoreDefinition newStoreDef, StoreDefinition remoteStoreDef, String localProcessName) {
@@ -4739,23 +4803,22 @@ public class AdminClient implements Closeable {
     }
 
     public class QuotaManagementOperations {
+      
+        private VectorClock makeDenseClock() {
+          // FIXME This is a temporary workaround for System store client not
+          // being able to do a second insert. We simply generate a super
+          // clock that will trump what is on storage
+          // But this will not work, if the nodes are ever removed or re-assigned.
+          // To complicate the issue further, SystemStore uses one clock for all 
+          // keys in a file. When you remove nodes, go delete, all version files from the disk
+          // otherwise 
+          return VectorClockUtils.makeClockWithCurrentTime(currentCluster.getNodeIds());
+        }
 
-        public void setQuota(String storeName, String quotaTypeStr, String quotaValue) {
-            QuotaType quotaType = null;
-            try {
-                quotaType = QuotaType.valueOf(quotaTypeStr);
-            } catch (IllegalArgumentException e) {
-                throw new VoldemortException("'" + quotaTypeStr + "' is not a supported quota type. " +
-                        "The following types are supported: " + Lists.newArrayList(QuotaType.values()), e);
+        public void setQuota(String storeName, QuotaType quotaType, long quota) {
+            for(Integer id: currentCluster.getNodeIds()) {
+              setQuotaForNode(storeName , quotaType, id, quota);
             }
-            // FIXME This is a temporary workaround for System store client not
-            // being able to do a second insert. We simply generate a super
-            // clock that will trump what is on storage
-            VectorClock denseClock = VectorClockUtils.makeClockWithCurrentTime(currentCluster.getNodeIds());
-            String quotaKey = QuotaUtils.makeQuotaKey(storeName, quotaType);
-            quotaSysStoreClient.putSysStore(quotaKey, new Versioned<String>(quotaValue, denseClock));
-            logger.info("Set quota " + quotaTypeStr + " to " + quotaValue + " for store "
-                        + storeName);
         }
 
         public void unsetQuota(String storeName, String quotaType) {
@@ -4773,15 +4836,13 @@ public class AdminClient implements Closeable {
             try {
                 String quotaKey = QuotaUtils.makeQuotaKey(storeName, quotaType);
                 ByteArray keyArray = new ByteArray(quotaKey.getBytes("UTF8"));
-                VectorClock clock = VectorClockUtils.makeClockWithCurrentTime(currentCluster.getNodeIds());
+                VectorClock clock = makeDenseClock();
+                byte[] valueArray = ByteUtils.getBytes(quota.toString(),"UTF8");
+                Versioned<byte[]> value = new Versioned<byte[]>( valueArray, clock);
+
                 NodeValue<ByteArray, byte[]> nodeKeyValue = new NodeValue<ByteArray, byte[]>(nodeId,
                                                                                              keyArray,
-                                                                                             new Versioned<byte[]>(ByteUtils.getBytes(quota.toString(),
-                                                                                                                                      "UTF8"),
-                                                                                                                   clock));
-                storeOps.deleteNodeKeyValue(SystemStoreConstants.SystemStoreName.voldsys$_store_quotas.name(),
-                                            nodeId,
-                                            keyArray);
+                                                                                             value);
                 storeOps.putNodeKeyValue(SystemStoreConstants.SystemStoreName.voldsys$_store_quotas.name(),
                                          nodeKeyValue);
             } catch(UnsupportedEncodingException e) {
@@ -4848,11 +4909,11 @@ public class AdminClient implements Closeable {
                 logger.info("No quota set for " + quotaType.toString() + " of store " + storeName
                             + " ");
             } else {
-                Integer averageQuota = totalQuota / nodeIds.size();
+                long averageQuota = totalQuota / nodeIds.size();
                 logger.info("Resetting quota: Store: " + storeName + ", Quota: "
                             + quotaType.toString() + ", Total: " + totalQuota.toString()
-                            + ", Average: " + averageQuota.toString());
-                setQuota(storeName, quotaType.toString(), averageQuota.toString());
+                            + ", Average: " + averageQuota);
+                setQuota(storeName, quotaType, averageQuota);
             }
         }
         

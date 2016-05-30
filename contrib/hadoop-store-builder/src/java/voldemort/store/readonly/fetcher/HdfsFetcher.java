@@ -16,6 +16,8 @@
 
 package voldemort.store.readonly.fetcher;
 
+import com.google.common.collect.Lists;
+import com.google.common.collect.Sets;
 import java.io.File;
 import java.io.IOException;
 import java.text.NumberFormat;
@@ -24,17 +26,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
-
 import javax.management.ObjectName;
-
-import org.apache.commons.io.IOUtils;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.log4j.Logger;
-
 import voldemort.VoldemortException;
-import voldemort.client.protocol.admin.AdminClient;
 import voldemort.cluster.Cluster;
 import voldemort.routing.RoutingStrategy;
 import voldemort.routing.RoutingStrategyFactory;
@@ -44,23 +41,18 @@ import voldemort.server.protocol.admin.AsyncOperationStatus;
 import voldemort.store.StoreDefinition;
 import voldemort.store.metadata.MetadataStore;
 import voldemort.store.quota.QuotaExceededException;
-import voldemort.store.quota.QuotaType;
 import voldemort.store.readonly.FileFetcher;
 import voldemort.store.readonly.ReadOnlyStorageMetadata;
 import voldemort.store.readonly.ReadOnlyUtils;
+import voldemort.store.readonly.UnauthorizedStoreException;
 import voldemort.store.readonly.checksum.CheckSum.CheckSumType;
 import voldemort.store.readonly.mr.utils.HadoopUtils;
 import voldemort.store.readonly.mr.utils.VoldemortUtils;
-import voldemort.store.readonly.swapper.InvalidBootstrapURLException;
 import voldemort.utils.ByteUtils;
 import voldemort.utils.EventThrottler;
 import voldemort.utils.JmxUtils;
 import voldemort.utils.Time;
 import voldemort.utils.Utils;
-import voldemort.versioning.Versioned;
-
-import com.google.common.collect.Lists;
-import com.google.common.collect.Sets;
 
 /**
  * A {@link FileFetcher} implementation that fetches the store files from HDFS
@@ -168,7 +160,7 @@ public class HdfsFetcher implements FileFetcher {
      *
      * FIXME: Refactor test code with dependency injection or scope restrictions so this function is not public.
      *
-     * @deprecated Do not use for production code, use {@link #fetch(String, String, voldemort.server.protocol.admin.AsyncOperationStatus, String, long, voldemort.store.metadata.MetadataStore)} instead.
+     * @deprecated Do not use for production code, use {@link #fetch(String, String, voldemort.server.protocol.admin.AsyncOperationStatus, String, long, voldemort.store.metadata.MetadataStore, Long diskQuotaSizeInKB)} instead.
      */
     @Deprecated
     @Override
@@ -181,7 +173,7 @@ public class HdfsFetcher implements FileFetcher {
      *
      * FIXME: Refactor test code with dependency injection or scope restrictions so this function is not public.
      *
-     * @deprecated Do not use for production code, use {@link #fetch(String, String, voldemort.server.protocol.admin.AsyncOperationStatus, String, long, voldemort.store.metadata.MetadataStore)} instead.
+     * @deprecated Do not use for production code, use {@link #fetch(String, String, voldemort.server.protocol.admin.AsyncOperationStatus, String, long, voldemort.store.metadata.MetadataStore, Long diskQuotaSizeInKB)} instead.
      */
     @Deprecated
     @Override
@@ -195,28 +187,17 @@ public class HdfsFetcher implements FileFetcher {
                       AsyncOperationStatus status,
                       String storeName,
                       long pushVersion,
-                      MetadataStore metadataStore) throws Exception {
-        AdminClient adminClient = null;
-        try {
-            adminClient = new AdminClient(metadataStore.getCluster());
+                      MetadataStore metadataStore,
+                      Long  diskQuotaSizeInKB) throws Exception {
 
-            Versioned<String> diskQuotaSize = adminClient.quotaMgmtOps.getQuotaForNode(storeName,
-                                                                                       QuotaType.STORAGE_SPACE,
-                                                                                       metadataStore.getNodeId());
-            Long diskQuotaSizeInKB = (diskQuotaSize == null) ? null : (Long.parseLong(diskQuotaSize.getValue()));
-            logger.info("Starting fetch for : " + sourceFileUrl);
-            return fetchFromSource(sourceFileUrl,
-                                   destinationFile,
-                                   status,
-                                   storeName,
-                                   pushVersion,
-                                   diskQuotaSizeInKB,
-                                   metadataStore);
-        } finally {
-            if(adminClient != null) {
-                IOUtils.closeQuietly(adminClient);
-            }
-        }
+        logger.info("Starting fetch for : " + sourceFileUrl);
+        return fetchFromSource(sourceFileUrl,
+                               destinationFile,
+                               status,
+                               storeName,
+                               pushVersion,
+                               diskQuotaSizeInKB,
+                               metadataStore);
     }
 
     private File fetchFromSource(String sourceFileUrl,
@@ -231,7 +212,12 @@ public class HdfsFetcher implements FileFetcher {
         FileSystem fs = null;
         sourceFileUrl = VoldemortUtils
             .modifyURL(sourceFileUrl, voldemortConfig.getModifiedProtocol(), voldemortConfig.getModifiedPort());
+        // Flag to indicate whether the fetch is complete or not
+        boolean isCompleteFetch = false;
         try {
+            // Record as one store fetch
+            HdfsCopyStats.storeFetch();
+
             fs = HadoopUtils.getHadoopFileSystem(voldemortConfig, sourceFileUrl);
             final Path rootPath = new Path(sourceFileUrl);
             File destination = new File(destinationFile);
@@ -241,14 +227,14 @@ public class HdfsFetcher implements FileFetcher {
                                              + " already exists");
             }
 
-            boolean isFile = fs.isFile(rootPath);
+            boolean isFile = isFile(fs, rootPath);
 
             stats = new HdfsCopyStats(sourceFileUrl,
-                                      destination,
-                                      false, // stats file initially disabled, to fetch just the first metadata file
-                                      maxVersionsStatsFile,
-                                      isFile,
-                                      null);
+                    destination,
+                    false, // stats file initially disabled, to fetch just the first metadata file
+                    maxVersionsStatsFile,
+                    isFile,
+                    null);
             jmxName = JmxUtils.registerMbean("hdfs-copy-" + copyCount.getAndIncrement(), stats);
             logger.info("Starting fetch for : " + sourceFileUrl);
 
@@ -257,7 +243,7 @@ public class HdfsFetcher implements FileFetcher {
                                                                  stats,
                                                                  status,
                                                                  bufferSize);
-            if(!fs.isFile(rootPath)) { // We are asked to fetch a directory
+            if(!isFile) { // We are asked to fetch a directory
                 Utils.mkdirs(destination);
                 HdfsDirectory rootDirectory = new HdfsDirectory(fs, rootPath, this.voldemortConfig);
                 List<HdfsDirectory> directoriesToFetch = Lists.newArrayList();
@@ -324,16 +310,19 @@ public class HdfsFetcher implements FileFetcher {
                                                        status,
                                                        bufferSize);
 
-                logger.debug("directoriesToFetch for store '" + storeName + "': " + Arrays.toString(directoriesToFetch.toArray()));
+                logger.debug("directoriesToFetch for store '" + storeName + "': " + Arrays
+                    .toString(directoriesToFetch.toArray()));
                 for (HdfsDirectory directoryToFetch: directoriesToFetch) {
                     Map<HdfsFile, byte[]> fileCheckSumMap = fetchStrategy.fetch(directoryToFetch, destination);
                     if(directoryToFetch.validateCheckSum(fileCheckSumMap)) {
                         logger.info("Completed fetch: " + sourceFileUrl);
                     } else {
+                        stats.checkSumFailed();
                         logger.error("Checksum did not match for " + directoryToFetch.toString() + " !");
                         return null;
                     }
                 }
+                isCompleteFetch = true;
                 return destination;
             } else if (allowFetchingOfSingleFile) {
                 /** This code path is only used by {@link #main(String[])} */
@@ -343,6 +332,7 @@ public class HdfsFetcher implements FileFetcher {
                 File copyLocation = new File(destination, fileName);
                 fetchStrategy.fetch(file, copyLocation, CheckSumType.NONE);
                 logger.info("Completed fetch : " + sourceFileUrl);
+                isCompleteFetch = true;
                 return destination;
             } else {
                 logger.error("Source " + rootPath.toString() + " should be a directory");
@@ -352,6 +342,10 @@ public class HdfsFetcher implements FileFetcher {
             if(stats != null) {
                 stats.reportError("File fetcher failed for destination " + destinationFile, e);
             }
+            // Since AuthenticationException may happen before stats object initialization (HadoopUtils.getHadoopFileSystem),
+            // we use the static method to capture all the exceptions here.
+            HdfsCopyStats.reportExceptionForStats(e);
+
             if(e instanceof VoldemortException) {
                 throw e;
             } else {
@@ -363,6 +357,9 @@ public class HdfsFetcher implements FileFetcher {
 
             if(stats != null) {
                 stats.complete();
+            }
+            if (!isCompleteFetch) {
+                HdfsCopyStats.incompleteFetch();
             }
 
             if(fs != null) {
@@ -430,11 +427,11 @@ public class HdfsFetcher implements FileFetcher {
                                 + ", Disk quota size in KB: " + diskQuotaSizeInKB;
             logger.debug(logMessage);
             if(diskQuotaSizeInKB == 0L) {
-                String errorMessage = "This store: \'"
-                                      + storeName
-                                      + "\' does not belong to this Voldemort cluster. Please use a valid bootstrap url.";
+                String errorMessage = "Not able to find store (" + storeName +
+                        ") in this cluster according to the push URL. BnP job is not able to create new stores now." +
+                        "Please reach out to a Voldemort admin if you think this is the correct cluster you want to push.";
                 logger.error(errorMessage);
-                throw new InvalidBootstrapURLException(errorMessage);
+                throw new UnauthorizedStoreException(errorMessage);
             }
             // check if there is still sufficient quota left for this push
             Long estimatedDiskSizeNeeded = (expectedDiskSize / ByteUtils.BYTES_PER_KB);
@@ -446,6 +443,27 @@ public class HdfsFetcher implements FileFetcher {
         } else {
             logger.debug("store: " + storeName + " is a Non Quota type store.");
         }
+    }
+
+    private boolean isFile(FileSystem fs, Path rootPath) {
+        for (int attempt = 1; attempt <= getMaxAttempts(); attempt++) {
+            try {
+                return fs.isFile(rootPath);
+            } catch (IOException e) {
+              logger.error("Error while calling isFile for path:" + rootPath.toString() + "  Attempt: #" + attempt + "/"
+                  + getMaxAttempts());
+              if (getRetryDelayMs() > 0) {
+                    try {
+                        Thread.sleep(getRetryDelayMs());
+                    } catch (InterruptedException ie) {
+                        logger.error("Fetcher is interrupted while wating to retry.", ie);
+                    }
+
+                }
+            }
+        }
+        throw new VoldemortException(
+            "After retrying " + getMaxAttempts() + "times, can not get result from filesystem for isFile.");
     }
 
     public Long getReportingIntervalBytes() {
@@ -478,6 +496,7 @@ public class HdfsFetcher implements FileFetcher {
         HdfsFetcher fetcher = new HdfsFetcher(config);
 
         String destDir = null;
+        Long diskQuotaSizeInKB;
         if(args.length >= 4) {
             fetcher.voldemortConfig.setReadOnlyKeytabPath(args[1]);
             fetcher.voldemortConfig.setReadOnlyKerberosUser(args[2]);
@@ -485,6 +504,11 @@ public class HdfsFetcher implements FileFetcher {
         }
         if(args.length >= 5)
             destDir = args[4];
+
+        if(args.length >= 6)
+            diskQuotaSizeInKB = Long.parseLong(args[5]);
+        else
+            diskQuotaSizeInKB = null;
 
         // for testing we want to be able to download a single file
         allowFetchingOfSingleFile = true;
@@ -498,7 +522,7 @@ public class HdfsFetcher implements FileFetcher {
         if(destDir == null)
             destDir = System.getProperty("java.io.tmpdir") + File.separator + start;
 
-        File location = fetcher.fetch(url, destDir, null, null, -1, null);
+        File location = fetcher.fetch(url, destDir, null, null, -1, null, diskQuotaSizeInKB);
 
         double rate = size * Time.MS_PER_SECOND / (double) (System.currentTimeMillis() - start);
         NumberFormat nf = NumberFormat.getInstance();

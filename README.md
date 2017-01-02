@@ -1,3 +1,7 @@
+# Caution
+
+This fork is only a research prototype not ready for production!
+
 # Voldemort is a distributed key-value storage system #
 
 ## Overview ##
